@@ -60,15 +60,8 @@
     <div class="container mx-auto px-4">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <img src="/logo.svg" alt="Iron Shot League" class="w-8 h-8" />
-          <div>
-            <p class="font-bold">
-              <span class="text-primary">Iron</span>
-              <span class="text-accent">Shot</span>
-              <span class="text-secondary">League</span>
-            </p>
-            <p class="text-xs text-base-content/50">Hosted by Rusty</p>
-          </div>
+          <img src="/logo.png" alt="Iron Shot League" class="h-10 w-auto" />
+          <p class="text-xs text-base-content/50">Hosted by Rusty</p>
         </div>
 
         <p class="text-sm text-base-content/50">
