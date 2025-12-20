@@ -1,4 +1,5 @@
 <script>
+  import { onMount, onDestroy } from 'svelte';
   import PlayerInput from '../components/PlayerInput.svelte';
   import { createSwissTournament, generateNextRound, recordResult, getStandings, isRoundComplete, isTournamentComplete } from '../lib/swiss.js';
   import { tournaments, createTournament, updateTournament } from '../stores/tournaments.js';
@@ -19,6 +20,10 @@
   // View state
   let view = 'setup';
   let activeTab = 'pairings'; // 'pairings' | 'standings'
+
+  // Fullscreen state
+  let isFullscreen = false;
+  let gameContainer;
 
   function handlePlayersChange(e) {
     players = e.detail;
@@ -45,7 +50,6 @@
 
   function openScoreModal(match) {
     if (match.player2 === 'BYE') return;
-    if (match.completed) return;
 
     selectedMatch = match;
     modalScore1 = match.score1 || 0;
@@ -100,10 +104,32 @@
     view = 'setup';
   }
 
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      gameContainer?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  function handleFullscreenChange() {
+    isFullscreen = !!document.fullscreenElement;
+  }
+
+  onMount(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+  });
+
+  onDestroy(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  });
+
   $: standings = tournament ? getStandings(tournament) : [];
   $: roundComplete = tournament ? isRoundComplete(tournament) : false;
   $: tournamentComplete = tournament ? isTournamentComplete(tournament) : false;
   $: currentRound = tournament?.rounds[tournament.rounds.length - 1];
+  $: completedMatches = currentRound?.matches?.filter(m => m.completed).length || 0;
+  $: totalMatches = currentRound?.matches?.length || 0;
 </script>
 
 <div class="page-container">
@@ -159,132 +185,151 @@
     </div>
   {:else}
     <!-- Tournament In Progress -->
-    <div class="tournament-screen">
-      <!-- Header -->
-      <div class="tournament-header">
-        <div class="header-info">
+    <div class="game-fullscreen" bind:this={gameContainer}>
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div class="top-bar-left">
           <h2 class="tournament-name">{currentTournament?.name || 'Swiss Tournament'}</h2>
-          <p class="tournament-meta">Round {tournament?.currentRound} of {tournament?.totalRounds}</p>
+          <span class="round-badge">Round {tournament?.currentRound} of {tournament?.totalRounds}</span>
         </div>
 
-        <div class="header-actions">
+        <div class="top-bar-center">
+          <div class="progress-display">
+            <span class="progress-label">Matches:</span>
+            <span class="progress-value">{completedMatches} / {totalMatches}</span>
+          </div>
+        </div>
+
+        <div class="top-bar-right">
           <button
-            class="tab-btn {activeTab === 'pairings' ? 'active' : ''}"
+            class="view-btn {activeTab === 'pairings' ? 'active' : ''}"
             on:click={() => activeTab = 'pairings'}
           >
             Pairings
           </button>
           <button
-            class="tab-btn {activeTab === 'standings' ? 'active' : ''}"
+            class="view-btn {activeTab === 'standings' ? 'active' : ''}"
             on:click={() => activeTab = 'standings'}
           >
             Standings
           </button>
-          <button class="new-btn" on:click={resetTournament}>
-            New
+          <button class="fullscreen-btn" on:click={toggleFullscreen}>
+            {isFullscreen ? '⛶' : '⛶'}
+          </button>
+          <button class="exit-btn" on:click={resetTournament}>
+            ✕
           </button>
         </div>
       </div>
 
       <!-- Progress Bar -->
-      <div class="progress-container">
+      <div class="progress-bar-container">
         <div class="progress-bar" style="width: {(tournament?.currentRound / tournament?.totalRounds) * 100}%"></div>
       </div>
-      <p class="progress-text">Round {tournament?.currentRound} of {tournament?.totalRounds}</p>
 
-      <!-- Tournament Complete Banner -->
-      {#if tournamentComplete}
-        <div class="winner-banner">
-          <span class="winner-icon">🏆</span>
-          <div class="winner-info">
-            <h3 class="winner-title">Tournament Complete!</h3>
-            <p class="winner-name">{standings[0]?.name}</p>
-            <p class="winner-stats">{standings[0]?.points} points • {standings[0]?.wins}W - {standings[0]?.losses}L</p>
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Tournament Complete Banner -->
+        {#if tournamentComplete}
+          <div class="winner-banner">
+            <span class="winner-icon">🏆</span>
+            <div class="winner-info">
+              <h3 class="winner-title">Tournament Complete!</h3>
+              <p class="winner-name">{standings[0]?.name}</p>
+              <p class="winner-stats">{standings[0]?.points} points • {standings[0]?.wins}W - {standings[0]?.losses}L</p>
+            </div>
           </div>
-        </div>
-      {/if}
+        {/if}
 
-      {#if activeTab === 'pairings'}
-        <!-- Current Round Pairings -->
-        <div class="pairings-section">
-          <div class="section-header">
-            <h3 class="section-title">Round {tournament?.currentRound} Pairings</h3>
-            {#if roundComplete}
-              <span class="complete-badge">Complete</span>
+        {#if activeTab === 'pairings'}
+          <!-- Current Round Pairings -->
+          <div class="pairings-section">
+            <div class="section-header">
+              <h3 class="section-title">Round {tournament?.currentRound} Pairings</h3>
+              {#if roundComplete}
+                <span class="complete-badge">Complete</span>
+              {/if}
+            </div>
+
+            <div class="matches-grid">
+              {#each currentRound?.matches || [] as match}
+                <button
+                  class="match-card {match.completed ? 'completed' : 'playable'} {match.player2 === 'BYE' ? 'bye' : ''}"
+                  on:click={() => openScoreModal(match)}
+                  disabled={match.player2 === 'BYE'}
+                >
+                  <div class="match-players">
+                    <div class="match-player {match.winner === 'player1' ? 'winner' : ''}">
+                      <span class="player-name">{match.player1}</span>
+                      {#if match.completed}
+                        <span class="player-score">{match.score1}</span>
+                      {/if}
+                    </div>
+                    <div class="match-divider">VS</div>
+                    <div class="match-player {match.winner === 'player2' ? 'winner' : ''} {match.player2 === 'BYE' ? 'bye-text' : ''}">
+                      <span class="player-name">{match.player2}</span>
+                      {#if match.completed}
+                        <span class="player-score">{match.score2}</span>
+                      {/if}
+                    </div>
+                  </div>
+                  {#if !match.completed && match.player2 !== 'BYE'}
+                    <span class="tap-hint">TAP</span>
+                  {:else if match.completed}
+                    <span class="edit-hint">TAP TO EDIT</span>
+                  {:else if match.player2 === 'BYE'}
+                    <span class="bye-badge">BYE</span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+
+            {#if roundComplete && !tournamentComplete}
+              <button class="next-round-btn" on:click={nextRound}>
+                Generate Round {tournament.currentRound + 1} Pairings
+              </button>
             {/if}
           </div>
-
-          <div class="matches-grid">
-            {#each currentRound?.matches || [] as match}
-              <button
-                class="match-card {match.completed ? 'completed' : ''} {match.player2 === 'BYE' ? 'bye' : ''}"
-                on:click={() => openScoreModal(match)}
-                disabled={match.completed || match.player2 === 'BYE'}
-              >
-                <div class="match-players">
-                  <div class="match-player {match.winner === 'player1' ? 'winner' : ''}">
-                    <span class="player-name">{match.player1}</span>
-                    {#if match.completed}
-                      <span class="player-score">{match.score1}</span>
-                    {/if}
-                  </div>
-                  <div class="match-divider">VS</div>
-                  <div class="match-player {match.winner === 'player2' ? 'winner' : ''} {match.player2 === 'BYE' ? 'bye-text' : ''}">
-                    <span class="player-name">{match.player2}</span>
-                    {#if match.completed}
-                      <span class="player-score">{match.score2}</span>
-                    {/if}
-                  </div>
-                </div>
-                {#if !match.completed && match.player2 !== 'BYE'}
-                  <span class="click-hint">Click to score</span>
-                {:else if match.player2 === 'BYE'}
-                  <span class="bye-badge">BYE</span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-
-          {#if roundComplete && !tournamentComplete}
-            <button class="next-round-btn" on:click={nextRound}>
-              Generate Round {tournament.currentRound + 1} Pairings
-            </button>
-          {/if}
-        </div>
-      {:else}
-        <!-- Standings -->
-        <div class="standings-section">
-          <h3 class="section-title">Standings</h3>
-          <div class="standings-table-container">
-            <table class="standings-table">
-              <thead>
-                <tr>
-                  <th class="th-rank">#</th>
-                  <th class="th-player">Player</th>
-                  <th class="th-center">Pts</th>
-                  <th class="th-center">W</th>
-                  <th class="th-center">L</th>
-                  <th class="th-center">D</th>
-                  <th class="th-center" title="Buchholz Score (tiebreaker)">Buch</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each standings as player, index}
-                  <tr class="{index === 0 ? 'leader-row' : ''}">
-                    <td class="td-rank {index === 0 ? 'leader' : ''}">{index + 1}</td>
-                    <td class="td-player">{player.name}</td>
-                    <td class="td-center td-points">{player.points}</td>
-                    <td class="td-center td-wins">{player.wins}</td>
-                    <td class="td-center td-losses">{player.losses}</td>
-                    <td class="td-center">{player.draws}</td>
-                    <td class="td-center td-buchholz">{player.buchholz.toFixed(1)}</td>
+        {:else}
+          <!-- Standings -->
+          <div class="standings-section">
+            <h3 class="section-title">Standings</h3>
+            <div class="standings-table-container">
+              <table class="standings-table">
+                <thead>
+                  <tr>
+                    <th class="th-rank">#</th>
+                    <th class="th-player">Player</th>
+                    <th class="th-center">Pts</th>
+                    <th class="th-center">W</th>
+                    <th class="th-center">L</th>
+                    <th class="th-center">D</th>
+                    <th class="th-center" title="Buchholz Score (tiebreaker)">Buch</th>
                   </tr>
-                {/each}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {#each standings as player, index}
+                    <tr class="{index === 0 ? 'leader-row' : ''}">
+                      <td class="td-rank {index === 0 ? 'leader' : ''}">{index + 1}</td>
+                      <td class="td-player">{player.name}</td>
+                      <td class="td-center td-points">{player.points}</td>
+                      <td class="td-center td-wins">{player.wins}</td>
+                      <td class="td-center td-losses">{player.losses}</td>
+                      <td class="td-center">{player.draws}</td>
+                      <td class="td-center td-buchholz">{player.buchholz.toFixed(1)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      {/if}
+        {/if}
+      </div>
+
+      <!-- Footer Hint -->
+      <div class="footer-hint">
+        Tap match cards to enter scores • Tap completed matches to edit
+      </div>
     </div>
   {/if}
 </div>
@@ -293,7 +338,7 @@
 {#if modalOpen && selectedMatch}
   <div class="modal-overlay" on:click={closeModal}>
     <div class="score-modal" on:click|stopPropagation>
-      <h3 class="modal-title">Enter Score</h3>
+      <h3 class="modal-title">{selectedMatch.completed ? 'Edit Score' : 'Enter Score'}</h3>
 
       <div class="modal-players">
         <div class="modal-player player1">
@@ -324,7 +369,7 @@
           on:click={submitScore}
           disabled={modalScore1 === modalScore2}
         >
-          Submit Score
+          {selectedMatch.completed ? 'Update Score' : 'Submit Score'}
         </button>
       </div>
     </div>
@@ -333,14 +378,16 @@
 
 <style>
   .page-container {
-    max-width: 1000px;
-    margin: 0 auto;
+    height: calc(100vh - 180px);
+    overflow: hidden;
   }
 
   /* Setup Screen */
   .setup-screen {
     text-align: center;
     padding: 2rem 1rem;
+    overflow-y: auto;
+    max-height: 100%;
   }
 
   .setup-title {
@@ -441,38 +488,83 @@
     cursor: not-allowed;
   }
 
-  /* Tournament Screen */
-  .tournament-screen {
-    padding: 1rem;
+  /* Game Fullscreen */
+  .game-fullscreen {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    overflow: hidden;
   }
 
-  .tournament-header {
+  .game-fullscreen:fullscreen {
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Top Bar */
+  .top-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+  }
+
+  .top-bar-left {
+    display: flex;
+    align-items: center;
     gap: 1rem;
-    margin-bottom: 1.5rem;
   }
 
   .tournament-name {
-    font-size: 1.75rem;
+    font-size: 1.25rem;
     font-weight: bold;
     color: white;
     margin: 0;
   }
 
-  .tournament-meta {
-    color: rgba(255, 255, 255, 0.6);
-    margin: 0;
+  .round-badge {
+    padding: 0.25rem 0.75rem;
+    background: linear-gradient(135deg, #ff6600, #ff9933);
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
   }
 
-  .header-actions {
+  .top-bar-center {
     display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .progress-display {
+    display: flex;
+    align-items: center;
     gap: 0.5rem;
   }
 
-  .tab-btn {
+  .progress-label {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.875rem;
+  }
+
+  .progress-value {
+    color: #ff9933;
+    font-weight: bold;
+    font-size: 1rem;
+  }
+
+  .top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .view-btn {
     padding: 0.5rem 1rem;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -480,52 +572,68 @@
     color: white;
     cursor: pointer;
     transition: all 0.2s;
+    font-size: 0.875rem;
   }
 
-  .tab-btn:hover {
+  .view-btn:hover {
     background: rgba(255, 255, 255, 0.2);
   }
 
-  .tab-btn.active {
+  .view-btn.active {
     background: linear-gradient(135deg, #ff6600, #ff9933);
     border-color: #ff6600;
   }
 
-  .new-btn {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    border: 1px solid rgba(239, 68, 68, 0.5);
+  .fullscreen-btn {
+    width: 40px;
+    height: 40px;
     border-radius: 0.5rem;
-    color: #ef4444;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 1.25rem;
     cursor: pointer;
     transition: all 0.2s;
   }
 
-  .new-btn:hover {
+  .fullscreen-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .exit-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 0.5rem;
     background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    color: #ef4444;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .exit-btn:hover {
+    background: rgba(239, 68, 68, 0.4);
   }
 
   /* Progress Bar */
-  .progress-container {
-    height: 8px;
+  .progress-bar-container {
+    height: 4px;
     background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 0.5rem;
+    flex-shrink: 0;
   }
 
   .progress-bar {
     height: 100%;
     background: linear-gradient(90deg, #ff6600, #ff9933);
-    border-radius: 4px;
     transition: width 0.5s ease;
   }
 
-  .progress-text {
-    text-align: center;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.875rem;
-    margin-bottom: 1.5rem;
+  /* Main Content */
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
   }
 
   /* Winner Banner */
@@ -606,7 +714,7 @@
 
   .match-card {
     background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.1);
     border-radius: 0.75rem;
     padding: 1rem;
     cursor: pointer;
@@ -623,6 +731,11 @@
     cursor: default;
   }
 
+  .match-card.playable {
+    border-color: rgba(255, 102, 0, 0.5);
+    animation: pulse-border 2s infinite;
+  }
+
   .match-card.completed {
     border-color: #22c55e;
   }
@@ -630,6 +743,11 @@
   .match-card.bye {
     opacity: 0.6;
     cursor: default;
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: rgba(255, 102, 0, 0.3); }
+    50% { border-color: rgba(255, 102, 0, 0.8); }
   }
 
   .match-players {
@@ -655,11 +773,12 @@
 
   .player-name {
     font-weight: 600;
-    color: white;
+    color: #ff9933;
+    font-size: 1.1rem;
   }
 
   .player-score {
-    font-size: 1.25rem;
+    font-size: 1.5rem;
     font-weight: bold;
     color: rgba(255, 255, 255, 0.5);
   }
@@ -675,7 +794,19 @@
     padding: 0.25rem 0;
   }
 
-  .click-hint {
+  .tap-hint {
+    display: block;
+    text-align: center;
+    font-size: 0.875rem;
+    font-weight: bold;
+    color: #ff6600;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    animation: pulse-text 1.5s infinite;
+  }
+
+  .edit-hint {
     display: block;
     text-align: center;
     font-size: 0.75rem;
@@ -683,6 +814,11 @@
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  @keyframes pulse-text {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
   }
 
   .bye-badge {
@@ -703,7 +839,7 @@
     border: none;
     border-radius: 0.75rem;
     color: white;
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s;
@@ -733,7 +869,7 @@
   .standings-table th {
     text-align: left;
     padding: 0.75rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 2px solid rgba(255, 102, 0, 0.3);
     color: rgba(255, 255, 255, 0.6);
     font-size: 0.875rem;
     font-weight: 600;
@@ -743,6 +879,7 @@
     padding: 0.75rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     color: white;
+    font-size: 1rem;
   }
 
   .th-rank {
@@ -759,6 +896,7 @@
 
   .td-rank {
     font-weight: bold;
+    font-size: 1.25rem;
   }
 
   .td-rank.leader {
@@ -767,11 +905,13 @@
 
   .td-player {
     font-weight: 600;
+    color: #ff9933;
   }
 
   .td-points {
     color: #ff9933;
     font-weight: bold;
+    font-size: 1.1rem;
   }
 
   .td-wins {
@@ -790,6 +930,16 @@
     background: rgba(34, 197, 94, 0.1);
   }
 
+  /* Footer Hint */
+  .footer-hint {
+    text-align: center;
+    padding: 0.75rem;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.875rem;
+    background: rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+  }
+
   /* Modal */
   .modal-overlay {
     position: fixed;
@@ -797,17 +947,17 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.85);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    z-index: 1000;
     padding: 1rem;
   }
 
   .score-modal {
     background: linear-gradient(135deg, #1e293b, #0f172a);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 102, 0, 0.3);
     border-radius: 1rem;
     padding: 2rem;
     width: 100%;
@@ -868,8 +1018,8 @@
   }
 
   .score-btn {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     border: none;
     font-size: 1.5rem;
@@ -893,10 +1043,10 @@
   }
 
   .score-display {
-    font-size: 2rem;
+    font-size: 2.5rem;
     font-weight: bold;
     color: white;
-    min-width: 50px;
+    min-width: 60px;
   }
 
   .modal-actions {
@@ -907,7 +1057,7 @@
 
   .cancel-btn {
     flex: 1;
-    padding: 0.75rem;
+    padding: 0.875rem;
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 0.5rem;
@@ -923,7 +1073,7 @@
 
   .submit-btn {
     flex: 1;
-    padding: 0.75rem;
+    padding: 0.875rem;
     background: linear-gradient(135deg, #ff6600, #ff9933);
     border: none;
     border-radius: 0.5rem;
@@ -942,5 +1092,34 @@
   .submit-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .top-bar {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .top-bar-left {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .top-bar-center {
+      display: none;
+    }
+
+    .matches-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .modal-players {
+      flex-direction: column;
+    }
+
+    .modal-vs {
+      padding: 0.5rem 0;
+    }
   }
 </style>

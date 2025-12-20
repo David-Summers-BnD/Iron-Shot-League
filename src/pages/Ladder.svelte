@@ -1,6 +1,7 @@
 <script>
+  import { onMount, onDestroy } from 'svelte';
   import PlayerInput from '../components/PlayerInput.svelte';
-  import { createLadder, processChallenge, getAvailableTargets, isValidChallenge } from '../lib/ladder.js';
+  import { createLadder, processChallenge, getAvailableTargets } from '../lib/ladder.js';
   import { tournaments, createTournament, updateTournament } from '../stores/tournaments.js';
   import { saveTournaments } from '../lib/storage.js';
 
@@ -20,6 +21,30 @@
 
   // View state
   let view = 'setup';
+  let isFullscreen = false;
+  let gameContainer;
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      gameContainer?.requestFullscreen();
+      isFullscreen = true;
+    } else {
+      document.exitFullscreen();
+      isFullscreen = false;
+    }
+  }
+
+  function handleFullscreenChange() {
+    isFullscreen = !!document.fullscreenElement;
+  }
+
+  onMount(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+  });
+
+  onDestroy(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  });
 
   function handlePlayersChange(e) {
     players = e.detail;
@@ -58,7 +83,6 @@
 
     ladder = processChallenge(ladder, challenger.rank, defender.rank, challengerWins);
 
-    // Record challenge
     challenges = [...challenges, {
       id: crypto.randomUUID(),
       date: new Date().toISOString(),
@@ -104,7 +128,7 @@
 
 <div class="page-container">
   {#if view === 'setup'}
-    <!-- Setup Phase -->
+    <!-- Setup Screen -->
     <div class="setup-screen">
       <h1 class="setup-title">Ladder Tournament</h1>
       <p class="setup-subtitle">Climb the ranks by challenging players above you. Win to swap positions!</p>
@@ -156,112 +180,121 @@
       </div>
     </div>
   {:else}
-    <!-- Ladder In Progress -->
-    <div class="tournament-screen">
-      <!-- Header -->
-      <div class="tournament-header">
-        <div class="header-info">
-          <h2 class="tournament-name">{currentTournament?.name || 'Ladder'}</h2>
-          <p class="tournament-meta">{ladder?.length} players • Challenge up to {maxRungs} rungs</p>
+    <!-- Ladder Screen - Full Screen -->
+    <div class="game-fullscreen" class:is-fullscreen={isFullscreen} bind:this={gameContainer}>
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div class="top-left">
+          <h1 class="game-title">{currentTournament?.name || 'Ladder'}</h1>
+          <span class="game-meta">{ladder?.length} players • {maxRungs} rungs max</span>
         </div>
 
-        <button class="new-btn" on:click={resetTournament}>
-          New Ladder
-        </button>
-      </div>
+        <div class="top-center">
+          <div class="challenges-count">
+            <span class="count-num">{challenges.length}</span>
+            <span class="count-label">matches played</span>
+          </div>
+        </div>
 
-      <!-- Instructions -->
-      <div class="instructions-box">
-        <span class="instructions-icon">💡</span>
-        <span>Click on a player to challenge someone above them (within {maxRungs} rungs)</span>
+        <div class="top-right">
+          <button class="fullscreen-btn" on:click={toggleFullscreen}>
+            {#if isFullscreen}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+              </svg>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            {/if}
+          </button>
+          <button class="end-btn" on:click={resetTournament}>Exit</button>
+        </div>
       </div>
 
       <!-- Ladder Display -->
-      <div class="ladder-container">
-        {#each ladder as entry, index}
-          <button
-            class="ladder-entry {index === 0 ? 'leader' : ''}"
-            on:click={() => entry.rank < ladder.length && initiateChallenge(entry)}
-            disabled={entry.rank === 1}
-          >
-            <!-- Rank Badge -->
-            <div class="rank-badge {index === 0 ? 'leader' : ''}">
-              {#if index === 0}
-                👑
-              {:else}
-                {entry.rank}
-              {/if}
-            </div>
-
-            <!-- Player Info -->
-            <div class="player-info">
-              <p class="player-name {index === 0 ? 'leader' : ''}">{entry.player}</p>
-              <div class="player-stats">
-                <span class="stat win">{entry.wins}W</span>
-                <span class="stat loss">{entry.losses}L</span>
-                {#if entry.challenges > 0}
-                  <span class="stat challenges">{entry.challenges} challenges</span>
+      <div class="ladder-area">
+        <div class="ladder-list">
+          {#each ladder as entry, index}
+            <button
+              class="ladder-entry"
+              class:leader={index === 0}
+              class:can-challenge={entry.rank < ladder.length}
+              on:click={() => entry.rank < ladder.length && initiateChallenge(entry)}
+              disabled={entry.rank === 1}
+            >
+              <div class="rank-badge" class:leader={index === 0}>
+                {#if index === 0}
+                  👑
+                {:else}
+                  {entry.rank}
                 {/if}
               </div>
-            </div>
 
-            <!-- Challenge Indicator -->
-            {#if entry.rank < ladder.length}
-              <div class="challenge-badge">
-                Challenge ↑
-              </div>
-            {/if}
-          </button>
-        {/each}
-      </div>
-
-      <!-- Recent Challenges -->
-      {#if challenges.length > 0}
-        <div class="challenges-section">
-          <h3 class="section-title">Recent Challenges</h3>
-          <div class="challenges-list">
-            {#each challenges.slice().reverse().slice(0, 10) as challenge}
-              <div class="challenge-entry">
-                <div class="challenge-players">
-                  <span class="challenger-name">{challenge.challenger}</span>
-                  <span class="challenge-vs"> challenged </span>
-                  <span class="defender-name">{challenge.defender}</span>
-                </div>
-                <div class="challenge-result">
-                  <span class="result-badge {challenge.winner === challenge.challenger ? 'won' : 'lost'}">
-                    {challenge.winner} won
-                  </span>
-                  {#if challenge.swapped}
-                    <span class="swap-indicator">⇅</span>
+              <div class="player-info">
+                <span class="player-name" class:leader={index === 0}>{entry.player}</span>
+                <div class="player-stats">
+                  <span class="stat win">{entry.wins}W</span>
+                  <span class="stat loss">{entry.losses}L</span>
+                  {#if entry.challenges > 0}
+                    <span class="stat challenges">{entry.challenges} challenges</span>
                   {/if}
                 </div>
               </div>
-            {/each}
-          </div>
+
+              {#if entry.rank < ladder.length}
+                <div class="challenge-badge">Challenge ↑</div>
+              {/if}
+            </button>
+          {/each}
         </div>
-      {/if}
+
+        <!-- Recent Challenges -->
+        {#if challenges.length > 0}
+          <div class="history-section">
+            <h3 class="history-title">Recent Matches</h3>
+            <div class="history-list">
+              {#each challenges.slice().reverse().slice(0, 8) as challenge}
+                <div class="history-entry">
+                  <span class="history-players">
+                    <span class="h-challenger">{challenge.challenger}</span>
+                    <span class="h-vs">vs</span>
+                    <span class="h-defender">{challenge.defender}</span>
+                  </span>
+                  <span class="history-result" class:swapped={challenge.swapped}>
+                    {challenge.winner} won {challenge.swapped ? '⇅' : ''}
+                  </span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Footer hint -->
+      <div class="footer-hint">
+        Tap a player to challenge someone above them (within {maxRungs} rungs)
+      </div>
     </div>
 
     <!-- Challenge Modal -->
     {#if showChallenge}
       <div class="modal-overlay" on:click={closeChallenge}>
-        <div class="challenge-modal" on:click|stopPropagation>
+        <div class="modal-content" on:click|stopPropagation>
           <h3 class="modal-title">Challenge Match</h3>
 
           {#if !defender}
             <div class="challenger-info">
-              <span class="challenger-name-modal">{challenger?.player}</span>
-              <span class="challenger-rank"> (Rank #{challenger?.rank}) is challenging...</span>
+              <span class="challenger-name">{challenger?.player}</span>
+              <span class="challenger-rank">(Rank #{challenger?.rank})</span>
+              <span class="challenger-text">is challenging...</span>
             </div>
 
             <p class="target-hint">Select opponent (up to {maxRungs} rungs above):</p>
 
             <div class="target-list">
               {#each availableTargets as target}
-                <button
-                  class="target-btn"
-                  on:click={() => selectDefender(target)}
-                >
+                <button class="target-btn" on:click={() => selectDefender(target)}>
                   <span class="target-name">{target.player}</span>
                   <span class="target-rank">Rank #{target.rank}</span>
                 </button>
@@ -269,26 +302,29 @@
             </div>
           {:else}
             <div class="matchup-display">
-              <span class="matchup-challenger">{challenger.player}</span>
-              <span class="matchup-vs">vs</span>
-              <span class="matchup-defender">{defender.player}</span>
+              <span class="m-challenger">{challenger.player}</span>
+              <span class="m-vs">vs</span>
+              <span class="m-defender">{defender.player}</span>
             </div>
+
             <p class="winner-prompt">Who won the match?</p>
 
             <div class="winner-buttons">
               <button
-                class="winner-btn challenger {challengeWinner === 'challenger' ? 'selected' : ''}"
+                class="winner-btn challenger"
+                class:selected={challengeWinner === 'challenger'}
                 on:click={() => challengeWinner = 'challenger'}
               >
-                <span class="winner-name">{challenger.player}</span>
-                <span class="winner-hint">(Swap positions)</span>
+                <span class="w-name">{challenger.player}</span>
+                <span class="w-hint">(Swap positions)</span>
               </button>
               <button
-                class="winner-btn defender {challengeWinner === 'defender' ? 'selected' : ''}"
+                class="winner-btn defender"
+                class:selected={challengeWinner === 'defender'}
                 on:click={() => challengeWinner = 'defender'}
               >
-                <span class="winner-name">{defender.player}</span>
-                <span class="winner-hint">(Stay in place)</span>
+                <span class="w-name">{defender.player}</span>
+                <span class="w-hint">(Stay in place)</span>
               </button>
             </div>
           {/if}
@@ -296,9 +332,7 @@
           <div class="modal-actions">
             <button class="cancel-btn" on:click={closeChallenge}>Cancel</button>
             {#if defender && challengeWinner}
-              <button class="submit-btn" on:click={submitChallenge}>
-                Submit Result
-              </button>
+              <button class="submit-btn" on:click={submitChallenge}>Submit Result</button>
             {/if}
           </div>
         </div>
@@ -309,14 +343,16 @@
 
 <style>
   .page-container {
-    max-width: 800px;
-    margin: 0 auto;
+    height: 100%;
+    overflow: hidden;
   }
 
   /* Setup Screen */
   .setup-screen {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 2rem;
     text-align: center;
-    padding: 2rem 1rem;
   }
 
   .setup-title {
@@ -337,12 +373,10 @@
 
   .setup-form {
     background: rgba(30, 41, 59, 0.8);
-    backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 1rem;
     padding: 2rem;
-    max-width: 700px;
-    margin: 0 auto;
+    text-align: left;
   }
 
   .form-grid {
@@ -353,14 +387,10 @@
   }
 
   @media (max-width: 640px) {
-    .form-grid {
-      grid-template-columns: 1fr;
-    }
+    .form-grid { grid-template-columns: 1fr; }
   }
 
-  .form-group {
-    text-align: left;
-  }
+  .form-group { text-align: left; }
 
   .form-label {
     display: block;
@@ -377,25 +407,21 @@
     border-radius: 0.5rem;
     color: white;
     font-size: 1rem;
-    transition: all 0.2s;
   }
 
   .form-input:focus {
     outline: none;
     border-color: #ff6600;
-    box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.2);
   }
 
-  .checkbox-group {
-    margin-bottom: 1.5rem;
-    text-align: left;
-  }
+  .checkbox-group { margin-bottom: 1.5rem; }
 
   .checkbox-label {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     cursor: pointer;
+    color: rgba(255, 255, 255, 0.8);
   }
 
   .form-checkbox {
@@ -406,22 +432,15 @@
 
   .start-btn {
     width: 100%;
-    padding: 1rem 2rem;
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: white;
+    padding: 1rem;
+    margin-top: 1rem;
     background: linear-gradient(135deg, #ff6600, #ff9933);
     border: none;
     border-radius: 0.75rem;
+    color: white;
+    font-size: 1.2rem;
+    font-weight: bold;
     cursor: pointer;
-    transition: all 0.3s;
-    box-shadow: 0 5px 20px rgba(255, 102, 0, 0.3);
-    margin-top: 1.5rem;
-  }
-
-  .start-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(255, 102, 0, 0.4);
   }
 
   .start-btn:disabled {
@@ -429,78 +448,123 @@
     cursor: not-allowed;
   }
 
-  /* Tournament Screen */
-  .tournament-screen {
-    padding: 1rem;
+  /* ========== FULL SCREEN GAME ========== */
+  .game-fullscreen {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 180px);
+    padding: 0.5rem;
+    overflow: hidden;
   }
 
-  .tournament-header {
+  .game-fullscreen.is-fullscreen {
+    height: 100vh;
+    padding: 1rem;
+    background: #0f172a;
+  }
+
+  /* Top Bar */
+  .top-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 0.75rem;
+    margin-bottom: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .top-left {
+    display: flex;
+    align-items: center;
     gap: 1rem;
-    margin-bottom: 1.5rem;
   }
 
-  .tournament-name {
-    font-size: 1.75rem;
+  .game-title {
+    font-size: 1.5rem;
     font-weight: bold;
-    color: white;
+    color: #ff9933;
     margin: 0;
   }
 
-  .tournament-meta {
-    color: rgba(255, 255, 255, 0.6);
-    margin: 0;
+  .game-meta {
+    color: rgba(255, 255, 255, 0.5);
   }
 
-  .new-btn {
+  .top-center {
+    display: flex;
+    justify-content: center;
+  }
+
+  .challenges-count {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .count-num {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #ff9933;
+  }
+
+  .count-label {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .top-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .fullscreen-btn {
+    padding: 0.5rem;
+    background: rgba(255, 102, 0, 0.2);
+    border: 1px solid rgba(255, 102, 0, 0.5);
+    border-radius: 0.5rem;
+    color: #ff9933;
+    cursor: pointer;
+    display: flex;
+  }
+
+  .fullscreen-btn:hover {
+    background: rgba(255, 102, 0, 0.4);
+  }
+
+  .end-btn {
     padding: 0.5rem 1rem;
     background: transparent;
     border: 1px solid rgba(239, 68, 68, 0.5);
     border-radius: 0.5rem;
     color: #ef4444;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .new-btn:hover {
-    background: rgba(239, 68, 68, 0.2);
-  }
-
-  /* Instructions */
-  .instructions-box {
+  /* ========== LADDER AREA ========== */
+  .ladder-area {
+    flex: 1;
+    overflow: auto;
+    padding: 0.5rem;
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 0.75rem;
-    margin-bottom: 1.5rem;
-    color: rgba(255, 255, 255, 0.8);
+    gap: 1rem;
   }
 
-  .instructions-icon {
-    font-size: 1.25rem;
-  }
-
-  /* Ladder Display */
-  .ladder-container {
+  .ladder-list {
+    flex: 2;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    margin-bottom: 2rem;
   }
 
   .ladder-entry {
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1rem;
+    padding: 1rem 1.25rem;
     background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.1);
     border-radius: 0.75rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -523,8 +587,8 @@
   }
 
   .rank-badge {
-    width: 48px;
-    height: 48px;
+    width: 50px;
+    height: 50px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -547,9 +611,10 @@
 
   .player-name {
     font-weight: bold;
-    font-size: 1.1rem;
+    font-size: 1.2rem;
     color: white;
-    margin: 0 0 0.25rem 0;
+    display: block;
+    margin-bottom: 0.25rem;
   }
 
   .player-name.leader {
@@ -562,122 +627,100 @@
     font-size: 0.875rem;
   }
 
-  .stat {
-    color: rgba(255, 255, 255, 0.5);
-  }
-
-  .stat.win {
-    color: #22c55e;
-  }
-
-  .stat.loss {
-    color: #ef4444;
-  }
+  .stat { color: rgba(255, 255, 255, 0.5); }
+  .stat.win { color: #22c55e; }
+  .stat.loss { color: #ef4444; }
 
   .challenge-badge {
     padding: 0.375rem 0.75rem;
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 1rem;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     color: rgba(255, 255, 255, 0.6);
   }
 
-  /* Challenges Section */
-  .challenges-section {
+  /* History Section */
+  .history-section {
+    flex: 1;
     background: rgba(30, 41, 59, 0.6);
     border-radius: 1rem;
-    padding: 1.5rem;
+    padding: 1rem;
+    max-width: 350px;
   }
 
-  .section-title {
-    font-size: 1.25rem;
+  .history-title {
+    font-size: 1rem;
     font-weight: bold;
     color: white;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
-  .challenges-list {
+  .history-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
-  .challenge-entry {
+  .history-entry {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    padding: 0.75rem;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
     background: rgba(15, 23, 42, 0.6);
     border-radius: 0.5rem;
-    font-size: 0.875rem;
+    font-size: 0.85rem;
   }
 
-  .challenge-players {
-    color: rgba(255, 255, 255, 0.8);
-  }
-
-  .challenger-name, .defender-name {
-    font-weight: 600;
-    color: white;
-  }
-
-  .challenge-vs {
-    color: rgba(255, 255, 255, 0.5);
-  }
-
-  .challenge-result {
+  .history-players {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.25rem;
   }
 
-  .result-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
+  .h-challenger { color: #42a5f5; font-weight: 600; }
+  .h-vs { color: rgba(255, 255, 255, 0.3); }
+  .h-defender { color: #ef5350; font-weight: 600; }
+
+  .history-result {
+    color: rgba(255, 255, 255, 0.6);
     font-size: 0.75rem;
-    font-weight: 600;
   }
 
-  .result-badge.won {
-    background: rgba(34, 197, 94, 0.2);
-    color: #22c55e;
-  }
-
-  .result-badge.lost {
-    background: rgba(239, 68, 68, 0.2);
-    color: #ef4444;
-  }
-
-  .swap-indicator {
+  .history-result.swapped {
     color: #ff9933;
-    font-weight: bold;
   }
 
-  /* Modal */
+  /* Footer */
+  .footer-hint {
+    text-align: center;
+    padding: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+
+  /* ========== MODAL ========== */
   .modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.9);
     display: flex;
-    align-items: center;
     justify-content: center;
-    z-index: 100;
-    padding: 1rem;
+    align-items: center;
+    z-index: 1000;
   }
 
-  .challenge-modal {
+  .modal-content {
     background: linear-gradient(135deg, #1e293b, #0f172a);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 1rem;
     padding: 2rem;
-    width: 100%;
     max-width: 450px;
+    width: 90%;
   }
 
   .modal-title {
@@ -689,29 +732,39 @@
   }
 
   .challenger-info {
+    text-align: center;
     margin-bottom: 1rem;
   }
 
-  .challenger-name-modal {
+  .challenger-name {
     font-weight: bold;
     color: #ff9933;
-    font-size: 1.1rem;
+    font-size: 1.25rem;
   }
 
   .challenger-rank {
     color: rgba(255, 255, 255, 0.6);
+    margin-left: 0.5rem;
+  }
+
+  .challenger-text {
+    display: block;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 0.25rem;
   }
 
   .target-hint {
     color: rgba(255, 255, 255, 0.6);
     font-size: 0.875rem;
     margin-bottom: 1rem;
+    text-align: center;
   }
 
   .target-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    margin-bottom: 1rem;
   }
 
   .target-btn {
@@ -720,7 +773,7 @@
     align-items: center;
     padding: 1rem;
     background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.1);
     border-radius: 0.5rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -752,18 +805,9 @@
     margin-bottom: 1rem;
   }
 
-  .matchup-challenger {
-    color: #42a5f5;
-  }
-
-  .matchup-vs {
-    color: rgba(255, 255, 255, 0.3);
-    margin: 0 0.5rem;
-  }
-
-  .matchup-defender {
-    color: #ef5350;
-  }
+  .m-challenger { color: #42a5f5; }
+  .m-vs { color: rgba(255, 255, 255, 0.3); margin: 0 0.5rem; }
+  .m-defender { color: #ef5350; }
 
   .winner-prompt {
     text-align: center;
@@ -808,14 +852,14 @@
     background: rgba(239, 83, 80, 0.3);
   }
 
-  .winner-name {
+  .w-name {
     display: block;
     font-weight: bold;
     color: white;
     margin-bottom: 0.25rem;
   }
 
-  .winner-hint {
+  .w-hint {
     font-size: 0.75rem;
     color: rgba(255, 255, 255, 0.5);
   }
@@ -834,12 +878,9 @@
     color: white;
     font-size: 1rem;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .cancel-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
+  .cancel-btn:hover { background: rgba(255, 255, 255, 0.1); }
 
   .submit-btn {
     flex: 1;
@@ -851,11 +892,11 @@
     font-size: 1rem;
     font-weight: bold;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .submit-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 20px rgba(255, 102, 0, 0.3);
+  @media (max-width: 768px) {
+    .ladder-area { flex-direction: column; }
+    .history-section { max-width: none; }
+    .top-bar { flex-wrap: wrap; gap: 0.5rem; }
   }
 </style>
