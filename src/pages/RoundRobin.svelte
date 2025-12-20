@@ -8,7 +8,7 @@
   let numTables = 1;
   let currentTournament = null;
   let matches = [];
-  let currentMatchIndices = [];
+  let activeMatchIds = [];
 
   // View state
   let view = 'setup';
@@ -35,82 +35,88 @@
   }
 
   function startTournament() {
-    if (players.length < 2) return;
+    if (players.length < 3) return;
 
     const name = tournamentName.trim() || `Round Robin - ${new Date().toLocaleDateString()}`;
     matches = generateMatches(players);
 
     // Set initial active matches based on table count
-    currentMatchIndices = [];
+    activeMatchIds = [];
     for (let i = 0; i < Math.min(numTables, matches.length); i++) {
-      currentMatchIndices.push(i);
+      activeMatchIds.push(matches[i].id);
     }
 
     currentTournament = createTournament('round-robin', name, players, { numTables });
     updateTournament(currentTournament.id, {
       status: 'in_progress',
       matches,
-      currentMatchIndices
+      activeMatchIds
     });
 
     view = 'game';
     saveData();
   }
 
-  function getMatchResult(p1, p2) {
-    if (p1 === p2) return 'self';
-    const match = matches.find(m =>
-      (m.player1 === p1 && m.player2 === p2) ||
-      (m.player1 === p2 && m.player2 === p1)
-    );
-    if (!match) return null;
-    if (!match.completed) return 'pending';
-    if (match.winner === p1) return 'win';
-    if (match.winner === p2) return 'loss';
-    return 'pending';
-  }
-
-  function isMatchActive(p1, p2) {
-    if (p1 === p2) return false;
-    const match = matches.find(m =>
-      (m.player1 === p1 && m.player2 === p2) ||
-      (m.player1 === p2 && m.player2 === p1)
-    );
-    if (!match) return false;
-    return currentMatchIndices.includes(match.id);
-  }
-
-  function getMatchForCell(p1, p2) {
+  function getMatch(p1, p2) {
     return matches.find(m =>
       (m.player1 === p1 && m.player2 === p2) ||
       (m.player1 === p2 && m.player2 === p1)
     );
   }
 
+  function getCellState(rowPlayer, colPlayer) {
+    if (rowPlayer === colPlayer) return 'self';
+
+    const match = getMatch(rowPlayer, colPlayer);
+    if (!match) return 'none';
+
+    if (!match.completed) {
+      if (activeMatchIds.includes(match.id)) return 'active';
+      return 'pending';
+    }
+
+    if (match.winner === rowPlayer) return 'win';
+    return 'loss';
+  }
+
   function handleCellClick(rowPlayer, colPlayer) {
-    // Re-evaluate conditions at click time
     if (rowPlayer === colPlayer) return;
 
-    const match = getMatchForCell(rowPlayer, colPlayer);
+    const match = getMatch(rowPlayer, colPlayer);
     if (!match) return;
     if (match.completed) return;
-    if (!currentMatchIndices.includes(match.id)) return;
+    if (!activeMatchIds.includes(match.id)) return;
 
-    // The row player wins
-    const updatedMatch = { ...match, winner: rowPlayer, completed: true };
+    // Update the match - row player wins
+    matches = matches.map(m => {
+      if (m.id === match.id) {
+        return { ...m, winner: rowPlayer, completed: true };
+      }
+      return m;
+    });
 
-    // Update matches array
-    matches = matches.map(m => m.id === match.id ? updatedMatch : m);
+    // Remove this match from active and add next ones
+    activeMatchIds = activeMatchIds.filter(id => id !== match.id);
 
-    // Move to next matches
-    advanceMatches();
+    // Find next incomplete matches to fill tables
+    const incompleteMatches = matches.filter(m => !m.completed && !activeMatchIds.includes(m.id));
+    while (activeMatchIds.length < numTables && incompleteMatches.length > 0) {
+      const nextMatch = incompleteMatches.shift();
+      if (nextMatch) {
+        activeMatchIds = [...activeMatchIds, nextMatch.id];
+      }
+    }
+
+    // Force reactivity
+    matches = [...matches];
+    activeMatchIds = [...activeMatchIds];
 
     // Update tournament
     if (currentTournament) {
       const isComplete = matches.every(m => m.completed);
       updateTournament(currentTournament.id, {
         matches,
-        currentMatchIndices,
+        activeMatchIds,
         status: isComplete ? 'completed' : 'in_progress'
       });
     }
@@ -118,34 +124,16 @@
     saveData();
   }
 
-  function advanceMatches() {
-    // Remove completed matches from current indices
-    currentMatchIndices = currentMatchIndices.filter(idx => !matches[idx]?.completed);
-
-    // Find next incomplete matches
-    const incompleteMatches = matches.filter(m => !m.completed && !currentMatchIndices.includes(m.id));
-
-    // Add matches up to table count
-    while (currentMatchIndices.length < numTables && incompleteMatches.length > 0) {
-      const nextMatch = incompleteMatches.shift();
-      if (nextMatch) {
-        currentMatchIndices.push(nextMatch.id);
-      }
-    }
-
-    currentMatchIndices = [...currentMatchIndices];
-  }
-
-  function calculateStandings() {
+  function getStandings() {
     return players.map(player => {
       const wins = matches.filter(m => m.completed && m.winner === player).length;
-      const losses = matches.filter(m => m.completed &&
+      const losses = matches.filter(m =>
+        m.completed &&
         (m.player1 === player || m.player2 === player) &&
         m.winner !== player
       ).length;
-      const played = wins + losses;
-      return { player, wins, losses, played, points: wins };
-    }).sort((a, b) => b.points - a.points || b.wins - a.wins);
+      return { player, wins, losses, played: wins + losses };
+    }).sort((a, b) => b.wins - a.wins || a.losses - b.losses);
   }
 
   async function saveData() {
@@ -158,16 +146,17 @@
     numTables = 1;
     currentTournament = null;
     matches = [];
-    currentMatchIndices = [];
+    activeMatchIds = [];
     view = 'setup';
   }
 
-  $: standings = view === 'game' ? calculateStandings() : [];
+  // Reactive statements
+  $: standings = matches.length > 0 ? getStandings() : [];
   $: completedCount = matches.filter(m => m.completed).length;
   $: totalMatches = matches.length;
   $: progressPercent = totalMatches > 0 ? (completedCount / totalMatches) * 100 : 0;
   $: tournamentComplete = matches.length > 0 && matches.every(m => m.completed);
-  $: activeMatches = currentMatchIndices.map(idx => matches[idx]).filter(Boolean);
+  $: activeMatches = matches.filter(m => activeMatchIds.includes(m.id));
 </script>
 
 <div class="page-container">
@@ -199,7 +188,7 @@
               <option value={5}>5 tables</option>
               <option value={6}>6 tables</option>
             </select>
-            <p class="form-hint">{numTables} match{numTables > 1 ? 'es' : ''} will play simultaneously</p>
+            <p class="form-hint">{numTables} match{numTables > 1 ? 'es' : ''} play simultaneously</p>
           </div>
         </div>
 
@@ -282,7 +271,7 @@
         <!-- Matrix Grid -->
         <div class="grid-section">
           <h3 class="section-title">Results Grid</h3>
-          <p class="grid-hint">Click a cell to mark the ROW player as winner</p>
+          <p class="grid-hint">Tap a highlighted cell to mark the ROW player as winner</p>
 
           <div class="matrix-container">
             <table class="matrix-table">
@@ -291,37 +280,35 @@
                   <th class="corner-cell"></th>
                   {#each players as player}
                     <th class="header-cell">
-                      <span class="header-name">{player}</span>
+                      <div class="header-name-wrapper">
+                        <span class="header-name">{player}</span>
+                      </div>
                     </th>
                   {/each}
                 </tr>
               </thead>
               <tbody>
-                {#each players as rowPlayer, rowIdx}
+                {#each players as rowPlayer}
                   <tr>
                     <td class="row-header">
                       <span class="row-name">{rowPlayer}</span>
                     </td>
-                    {#each players as colPlayer, colIdx}
-                      {@const result = getMatchResult(rowPlayer, colPlayer)}
-                      {@const isActive = isMatchActive(rowPlayer, colPlayer)}
+                    {#each players as colPlayer}
+                      {@const cellState = getCellState(rowPlayer, colPlayer)}
                       <td
-                        class="matrix-cell {result} {isActive ? 'active' : ''}"
-                        class:clickable={isActive && result === 'pending'}
+                        class="matrix-cell {cellState}"
                         on:click={() => handleCellClick(rowPlayer, colPlayer)}
-                        role="button"
-                        tabindex={isActive && result === 'pending' ? 0 : -1}
                       >
-                        {#if result === 'self'}
-                          <span class="cell-self">—</span>
-                        {:else if result === 'win'}
-                          <span class="cell-win">✓</span>
-                        {:else if result === 'loss'}
-                          <span class="cell-loss">✗</span>
-                        {:else if isActive}
-                          <span class="cell-active">●</span>
+                        {#if cellState === 'self'}
+                          <span class="cell-icon">—</span>
+                        {:else if cellState === 'win'}
+                          <span class="cell-icon win">✓</span>
+                        {:else if cellState === 'loss'}
+                          <span class="cell-icon loss">✗</span>
+                        {:else if cellState === 'active'}
+                          <span class="cell-icon active">●</span>
                         {:else}
-                          <span class="cell-pending"></span>
+                          <span class="cell-icon pending"></span>
                         {/if}
                       </td>
                     {/each}
@@ -332,9 +319,9 @@
           </div>
 
           <div class="legend">
-            <span class="legend-item"><span class="legend-icon win">✓</span> Win</span>
-            <span class="legend-item"><span class="legend-icon loss">✗</span> Loss</span>
-            <span class="legend-item"><span class="legend-icon active">●</span> Current Match</span>
+            <span class="legend-item"><span class="leg-icon win">✓</span> Win</span>
+            <span class="legend-item"><span class="leg-icon loss">✗</span> Loss</span>
+            <span class="legend-item"><span class="leg-icon active">●</span> Tap to Score</span>
           </div>
         </div>
 
@@ -343,7 +330,7 @@
           <h3 class="section-title">Standings</h3>
           <div class="standings-list">
             {#each standings as stat, index}
-              <div class="standing-row {index === 0 && stat.played > 0 ? 'leader' : ''}">
+              <div class="standing-row" class:leader={index === 0 && stat.played > 0}>
                 <span class="standing-rank">{index + 1}</span>
                 <span class="standing-name">{stat.player}</span>
                 <div class="standing-stats">
@@ -430,7 +417,6 @@
     border-radius: 0.5rem;
     color: white;
     font-size: 1rem;
-    transition: all 0.2s;
   }
 
   .form-input:focus {
@@ -511,7 +497,6 @@
     border-radius: 0.5rem;
     color: #ef4444;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
   .end-btn:hover {
@@ -645,7 +630,7 @@
   /* Main Content */
   .main-content {
     display: grid;
-    grid-template-columns: 1fr 280px;
+    grid-template-columns: 1fr 250px;
     gap: 1.5rem;
   }
 
@@ -671,53 +656,60 @@
 
   .matrix-container {
     overflow-x: auto;
+    padding-top: 60px;
   }
 
   .matrix-table {
     border-collapse: collapse;
-    width: 100%;
     min-width: max-content;
   }
 
   .corner-cell {
-    width: 120px;
-    min-width: 120px;
+    width: 100px;
+    min-width: 100px;
   }
 
   .header-cell {
-    padding: 0.5rem;
-    text-align: center;
-    min-width: 60px;
+    position: relative;
+    width: 55px;
+    min-width: 55px;
+    height: 30px;
+    padding: 0;
+  }
+
+  .header-name-wrapper {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform-origin: bottom left;
+    transform: rotate(-45deg);
+    white-space: nowrap;
   }
 
   .header-name {
     display: block;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
-    writing-mode: vertical-lr;
-    transform: rotate(180deg);
-    white-space: nowrap;
-    max-height: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #ff9933;
+    padding-left: 5px;
   }
 
   .row-header {
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1rem;
     text-align: right;
     background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .row-name {
-    font-weight: 600;
-    color: white;
-    font-size: 0.875rem;
+    font-weight: 700;
+    color: #ff9933;
+    font-size: 1rem;
   }
 
   .matrix-cell {
-    width: 50px;
-    height: 50px;
+    width: 55px;
+    height: 55px;
     text-align: center;
     vertical-align: middle;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -729,62 +721,55 @@
   }
 
   .matrix-cell.win {
-    background: rgba(34, 197, 94, 0.2);
+    background: rgba(34, 197, 94, 0.3);
   }
 
   .matrix-cell.loss {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(239, 68, 68, 0.2);
+  }
+
+  .matrix-cell.pending {
+    background: rgba(255, 255, 255, 0.02);
   }
 
   .matrix-cell.active {
-    background: rgba(255, 102, 0, 0.3);
-    border-color: #ff6600;
+    background: rgba(255, 102, 0, 0.4);
+    border: 2px solid #ff6600;
+    cursor: pointer;
     animation: glow 1.5s infinite;
+  }
+
+  .matrix-cell.active:hover {
+    background: rgba(255, 102, 0, 0.6);
+    transform: scale(1.05);
   }
 
   @keyframes glow {
     0%, 100% { box-shadow: inset 0 0 10px rgba(255, 102, 0, 0.3); }
-    50% { box-shadow: inset 0 0 20px rgba(255, 102, 0, 0.5); }
+    50% { box-shadow: inset 0 0 20px rgba(255, 102, 0, 0.6); }
   }
 
-  .matrix-cell.clickable {
-    cursor: pointer;
-  }
-
-  .matrix-cell.clickable:hover {
-    background: rgba(255, 102, 0, 0.5);
-    transform: scale(1.05);
-  }
-
-  .cell-self {
-    color: rgba(255, 255, 255, 0.2);
-    font-size: 1.25rem;
-  }
-
-  .cell-win {
-    color: #22c55e;
+  .cell-icon {
     font-size: 1.5rem;
     font-weight: bold;
   }
 
-  .cell-loss {
-    color: #ef4444;
-    font-size: 1.25rem;
+  .cell-icon.win {
+    color: #22c55e;
   }
 
-  .cell-active {
+  .cell-icon.loss {
+    color: #ef4444;
+  }
+
+  .cell-icon.active {
     color: #ff6600;
-    font-size: 1.25rem;
     animation: blink 1s infinite;
   }
 
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
-  }
-
-  .cell-pending {
-    color: rgba(255, 255, 255, 0.1);
   }
 
   .legend {
@@ -804,19 +789,20 @@
     color: rgba(255, 255, 255, 0.6);
   }
 
-  .legend-icon {
+  .leg-icon {
     font-weight: bold;
+    font-size: 1rem;
   }
 
-  .legend-icon.win {
+  .leg-icon.win {
     color: #22c55e;
   }
 
-  .legend-icon.loss {
+  .leg-icon.loss {
     color: #ef4444;
   }
 
-  .legend-icon.active {
+  .leg-icon.active {
     color: #ff6600;
   }
 
@@ -825,6 +811,7 @@
     background: rgba(30, 41, 59, 0.6);
     border-radius: 1rem;
     padding: 1.5rem;
+    height: fit-content;
   }
 
   .standings-list {
@@ -844,8 +831,8 @@
   }
 
   .standing-row.leader {
-    background: rgba(34, 197, 94, 0.1);
-    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.4);
   }
 
   .standing-rank {
@@ -869,17 +856,18 @@
     flex: 1;
     font-weight: 600;
     color: white;
+    font-size: 1rem;
   }
 
   .standing-stats {
     display: flex;
     gap: 0.5rem;
-    font-size: 0.875rem;
+    font-size: 0.9rem;
+    font-weight: 600;
   }
 
   .stat-wins {
     color: #22c55e;
-    font-weight: 600;
   }
 
   .stat-losses {
