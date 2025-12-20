@@ -202,78 +202,75 @@
       </div>
 
       <!-- Bracket Display -->
-      <div class="bracket-area" style="--num-rounds: {bracket.numRounds}; --first-round-matches: {bracket.rounds[0].matches.length};">
-        <!-- Round Headers -->
-        <div class="round-headers">
-          {#each bracket.rounds as round}
-            <div class="round-header">{round.name}</div>
-          {/each}
-        </div>
-
-        <!-- Bracket Grid -->
-        <div class="bracket-grid">
+      <div class="bracket-area">
+        <div class="bracket-scroll" style="min-height: {bracket.rounds[0].matches.length * 50}px;">
           {#each bracket.rounds as round, roundIndex}
-            {@const rowSpan = Math.pow(2, roundIndex)}
-            <div class="round-column" style="--round-index: {roundIndex};">
-              {#each round.matches as match, matchIndex}
-                {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE' && !match.completed}
-                {@const isBye = match.player1 === 'BYE' || match.player2 === 'BYE'}
-                {@const gridRow = matchIndex * rowSpan * 2 + rowSpan}
-                <div
-                  class="match-cell"
-                  style="grid-row: {gridRow} / span {rowSpan};"
-                >
+            {@const roundMult = Math.pow(2, roundIndex)}
+            {@const isLastRound = roundIndex === bracket.rounds.length - 1}
+            {@const totalSlots = bracket.rounds[0].matches.length * 2}
+            <div class="round-column">
+              <div class="round-header">{round.name}</div>
+              <div class="round-matches">
+                {#each round.matches as match, matchIndex}
+                  {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE' && !match.completed}
+                  {@const isBye = match.player1 === 'BYE' || match.player2 === 'BYE'}
+                  {@const posPercent = ((matchIndex * 2 + 1) * roundMult / totalSlots) * 100}
                   <div
-                    class="bracket-match"
-                    class:completed={match.completed}
-                    class:playable={isPlayable}
-                    class:bye={isBye}
+                    class="match-cell"
+                    style="top: {posPercent}%;"
                   >
-                    <button
-                      class="match-slot"
-                      class:winner={match.winner === 'player1'}
-                      class:bye-slot={match.player1 === 'BYE'}
-                      class:clickable={isPlayable}
-                      on:click={() => isPlayable && selectWinner(match, 'player1')}
-                      disabled={!isPlayable}
+                    <div
+                      class="bracket-match"
+                      class:completed={match.completed}
+                      class:playable={isPlayable}
+                      class:bye={isBye}
                     >
-                      <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
-                      {#if isPlayable}
-                        <span class="tap-label">TAP</span>
-                      {/if}
-                    </button>
-                    <div class="match-divider"></div>
-                    <button
-                      class="match-slot"
-                      class:winner={match.winner === 'player2'}
-                      class:bye-slot={match.player2 === 'BYE'}
-                      class:clickable={isPlayable}
-                      on:click={() => isPlayable && selectWinner(match, 'player2')}
-                      disabled={!isPlayable}
-                    >
-                      <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
-                      {#if isPlayable}
-                        <span class="tap-label">TAP</span>
-                      {/if}
-                    </button>
+                      <button
+                        class="match-slot"
+                        class:winner={match.winner === 'player1'}
+                        class:bye-slot={match.player1 === 'BYE'}
+                        class:clickable={isPlayable}
+                        on:click={() => isPlayable && selectWinner(match, 'player1')}
+                        disabled={!isPlayable}
+                      >
+                        <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
+                        {#if isPlayable}
+                          <span class="tap-label">TAP</span>
+                        {/if}
+                      </button>
+                      <div class="match-divider"></div>
+                      <button
+                        class="match-slot"
+                        class:winner={match.winner === 'player2'}
+                        class:bye-slot={match.player2 === 'BYE'}
+                        class:clickable={isPlayable}
+                        on:click={() => isPlayable && selectWinner(match, 'player2')}
+                        disabled={!isPlayable}
+                      >
+                        <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
+                        {#if isPlayable}
+                          <span class="tap-label">TAP</span>
+                        {/if}
+                      </button>
+                    </div>
+                    <!-- Connector lines -->
+                    {#if !isLastRound}
+                      <div class="connector-h"></div>
+                    {/if}
                   </div>
-                  <!-- Connector to next round -->
-                  {#if roundIndex < bracket.rounds.length - 1}
-                    <div class="connector-right"></div>
-                  {/if}
-                </div>
-              {/each}
-              <!-- Vertical connectors between matches -->
-              {#if roundIndex < bracket.rounds.length - 1}
-                {#each Array(round.matches.length / 2) as _, pairIndex}
-                  {@const startRow = pairIndex * rowSpan * 4 + rowSpan}
-                  {@const endRow = startRow + rowSpan * 2}
-                  <div
-                    class="connector-vertical"
-                    style="grid-row: {startRow} / {endRow};"
-                  ></div>
                 {/each}
-              {/if}
+                <!-- Vertical connectors -->
+                {#if !isLastRound}
+                  {#each Array(round.matches.length / 2) as _, pairIdx}
+                    {@const topPos = ((pairIdx * 4 + 1) * roundMult / totalSlots) * 100}
+                    {@const bottomPos = ((pairIdx * 4 + 3) * roundMult / totalSlots) * 100}
+                    <div
+                      class="connector-v"
+                      style="top: {topPos}%; height: {bottomPos - topPos}%;"
+                    ></div>
+                  {/each}
+                {/if}
+              </div>
             </div>
           {/each}
         </div>
@@ -533,83 +530,75 @@
   /* ========== BRACKET AREA ========== */
   .bracket-area {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding: 0.5rem 1rem;
+    overflow: auto;
+    padding: 0.5rem;
   }
 
-  .round-headers {
-    display: grid;
-    grid-template-columns: repeat(var(--num-rounds), 1fr);
-    gap: 2rem;
-    padding: 0 0.5rem;
-    flex-shrink: 0;
+  .bracket-scroll {
+    display: flex;
+    position: relative;
+  }
+
+  .round-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 150px;
+    flex: 1;
   }
 
   .round-header {
     text-align: center;
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     font-weight: bold;
     color: #ff6600;
-    padding: 0.4rem 0.5rem;
+    padding: 0.3rem 0.5rem;
     background: rgba(255, 102, 0, 0.15);
-    border-radius: 0.4rem;
+    border-radius: 0.3rem;
+    margin: 0 1rem 0.5rem 0.5rem;
+    flex-shrink: 0;
   }
 
-  .bracket-grid {
+  .round-matches {
     flex: 1;
-    display: grid;
-    grid-template-columns: repeat(var(--num-rounds), 1fr);
-    gap: 0;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .round-column {
-    display: grid;
-    grid-template-rows: repeat(calc(var(--first-round-matches) * 2), 1fr);
     position: relative;
-    padding: 0.25rem 0;
   }
 
   .match-cell {
+    position: absolute;
+    left: 0.5rem;
+    right: 1rem;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
-    padding: 0.125rem 0.5rem;
-    position: relative;
   }
 
   /* Connector lines */
-  .connector-right {
+  .connector-h {
     position: absolute;
-    right: 0;
+    right: -1rem;
     top: 50%;
-    width: calc(50% - 70px);
-    min-width: 10px;
+    width: 1rem;
     height: 2px;
-    background: rgba(255, 102, 0, 0.6);
+    background: #ff6600;
     transform: translateY(-50%);
   }
 
-  .connector-vertical {
+  .connector-v {
     position: absolute;
-    right: calc(50% - 70px);
+    right: 0;
     width: 2px;
-    background: rgba(255, 102, 0, 0.6);
-    z-index: 1;
+    background: #ff6600;
   }
 
   /* Match card */
   .bracket-match {
-    width: 140px;
-    max-width: 100%;
+    width: 100%;
+    max-width: 130px;
     background: rgba(30, 41, 59, 0.95);
     border: 2px solid rgba(255, 255, 255, 0.15);
     border-radius: 0.4rem;
     overflow: hidden;
     transition: all 0.2s;
-    flex-shrink: 0;
   }
 
   .bracket-match.completed {
@@ -708,18 +697,22 @@
 
   /* Responsive */
   @media (max-width: 768px) {
+    .round-column {
+      min-width: 120px;
+    }
+
     .bracket-match {
-      width: 120px;
+      max-width: 110px;
     }
 
     .match-slot {
-      padding: 0.3rem 0.4rem;
+      padding: 0.25rem 0.4rem;
       font-size: 0.7rem;
     }
 
     .round-header {
-      font-size: 0.7rem;
-      padding: 0.3rem;
+      font-size: 0.65rem;
+      padding: 0.25rem;
     }
 
     .top-bar {
@@ -733,13 +726,17 @@
   }
 
   @media (max-width: 480px) {
+    .round-column {
+      min-width: 100px;
+    }
+
     .bracket-match {
-      width: 100px;
+      max-width: 90px;
     }
 
     .match-slot {
-      padding: 0.25rem 0.3rem;
-      font-size: 0.65rem;
+      padding: 0.2rem 0.25rem;
+      font-size: 0.6rem;
     }
 
     .tap-label {
