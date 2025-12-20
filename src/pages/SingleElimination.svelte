@@ -11,12 +11,6 @@
   let bracket = null;
   let currentTournament = null;
 
-  // Modal state
-  let modalOpen = false;
-  let selectedMatch = null;
-  let modalScore1 = 0;
-  let modalScore2 = 0;
-
   // View state
   let view = 'setup';
   let isFullscreen = false;
@@ -25,10 +19,8 @@
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       gameContainer?.requestFullscreen();
-      isFullscreen = true;
     } else {
       document.exitFullscreen();
-      isFullscreen = false;
     }
   }
 
@@ -64,26 +56,16 @@
     saveData();
   }
 
-  function openScoreModal(match) {
-    if (match.player1 === 'BYE' || match.player2 === 'BYE') return;
+  function selectWinner(match, winnerSlot) {
+    // Can't select winner if match isn't ready
     if (!match.player1 || !match.player2) return;
+    if (match.player1 === 'BYE' || match.player2 === 'BYE') return;
 
-    selectedMatch = match;
-    modalScore1 = match.score1 || 0;
-    modalScore2 = match.score2 || 0;
-    modalOpen = true;
-  }
+    // Determine winner and loser scores (winner gets 1, loser gets 0 for simple tracking)
+    const score1 = winnerSlot === 'player1' ? 1 : 0;
+    const score2 = winnerSlot === 'player2' ? 1 : 0;
 
-  function closeModal() {
-    modalOpen = false;
-    selectedMatch = null;
-  }
-
-  function submitScore() {
-    if (!selectedMatch || modalScore1 === modalScore2) return;
-
-    const winner = modalScore1 > modalScore2 ? 'player1' : 'player2';
-    bracket = updateMatch(bracket, selectedMatch.id, modalScore1, modalScore2, winner);
+    bracket = updateMatch(bracket, match.id, score1, score2, winnerSlot);
 
     if (currentTournament) {
       const isComplete = isBracketComplete(bracket);
@@ -94,7 +76,6 @@
     }
 
     saveData();
-    closeModal();
   }
 
   async function saveData() {
@@ -107,6 +88,14 @@
     bracket = null;
     currentTournament = null;
     view = 'setup';
+  }
+
+  // Calculate spacing for connector lines
+  function getMatchHeight(roundIndex, totalRounds) {
+    // Each round has matches that are more spread out
+    const baseHeight = 80;
+    const multiplier = Math.pow(2, roundIndex);
+    return baseHeight * multiplier;
   }
 
   $: winner = bracket ? getBracketWinner(bracket) : null;
@@ -171,7 +160,6 @@
             <div class="champion-bar">
               <span class="champ-trophy">🏆</span>
               <span class="champ-name">{winner}</span>
-              <span class="champ-label">CHAMPION</span>
             </div>
           {:else}
             <div class="progress-info">
@@ -201,84 +189,75 @@
 
       <!-- Bracket Display -->
       <div class="bracket-area">
-        <div class="bracket-scroll">
-          <div class="bracket-rounds">
-            {#each bracket.rounds as round, roundIndex}
-              <div class="bracket-round">
-                <h3 class="round-name">{round.name}</h3>
-                <div class="round-matches" style="padding-top: {roundIndex * 50}px;">
-                  {#each round.matches as match}
-                    {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE'}
-                    {@const isClickable = isPlayable}
-                    <button
+        <div class="bracket-container">
+          {#each bracket.rounds as round, roundIndex}
+            <div class="bracket-round" style="--round-index: {roundIndex}; --total-rounds: {bracket.rounds.length};">
+              <h3 class="round-name">{round.name}</h3>
+              <div class="round-matches">
+                {#each round.matches as match, matchIndex}
+                  {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE'}
+                  {@const isBye = match.player1 === 'BYE' || match.player2 === 'BYE'}
+                  <div class="match-wrapper" style="--match-spacing: {Math.pow(2, roundIndex)};">
+                    <!-- Connector lines -->
+                    {#if roundIndex > 0}
+                      <svg class="connector connector-left" viewBox="0 0 30 100" preserveAspectRatio="none">
+                        <path d="M30 50 L15 50 L15 0" class="connector-line" />
+                        <path d="M30 50 L15 50 L15 100" class="connector-line" />
+                      </svg>
+                    {/if}
+                    {#if roundIndex < bracket.rounds.length - 1}
+                      <svg class="connector connector-right" viewBox="0 0 30 100" preserveAspectRatio="none">
+                        <path d="M0 50 L30 50" class="connector-line" />
+                      </svg>
+                    {/if}
+
+                    <div
                       class="bracket-match"
                       class:completed={match.completed}
                       class:playable={isPlayable && !match.completed}
-                      class:disabled={!isPlayable}
-                      on:click={() => isClickable && openScoreModal(match)}
-                      disabled={!isClickable}
+                      class:bye={isBye}
                     >
-                      <div class="match-slot" class:winner={match.winner === 'player1'} class:bye={match.player1 === 'BYE'}>
-                        <span class="slot-name">{match.player1 || 'TBD'}</span>
-                        {#if match.completed}<span class="slot-score">{match.score1}</span>{/if}
-                      </div>
-                      <div class="match-slot" class:winner={match.winner === 'player2'} class:bye={match.player2 === 'BYE'}>
-                        <span class="slot-name">{match.player2 || 'TBD'}</span>
-                        {#if match.completed}<span class="slot-score">{match.score2}</span>{/if}
-                      </div>
-                      {#if isPlayable && !match.completed}
-                        <span class="tap-hint">TAP</span>
-                      {/if}
-                    </button>
-                  {/each}
-                </div>
+                      <button
+                        class="match-slot"
+                        class:winner={match.winner === 'player1'}
+                        class:bye-slot={match.player1 === 'BYE'}
+                        class:clickable={isPlayable}
+                        on:click={() => isPlayable && selectWinner(match, 'player1')}
+                        disabled={!isPlayable}
+                      >
+                        <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
+                        {#if isPlayable && !match.completed}
+                          <span class="tap-label">TAP</span>
+                        {/if}
+                      </button>
+                      <div class="match-divider"></div>
+                      <button
+                        class="match-slot"
+                        class:winner={match.winner === 'player2'}
+                        class:bye-slot={match.player2 === 'BYE'}
+                        class:clickable={isPlayable}
+                        on:click={() => isPlayable && selectWinner(match, 'player2')}
+                        disabled={!isPlayable}
+                      >
+                        <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
+                        {#if isPlayable && !match.completed}
+                          <span class="tap-label">TAP</span>
+                        {/if}
+                      </button>
+                    </div>
+                  </div>
+                {/each}
               </div>
-            {/each}
-          </div>
+            </div>
+          {/each}
         </div>
       </div>
 
       <!-- Footer hint -->
       <div class="footer-hint">
-        Tap any match to enter score • Tap completed matches to correct
+        Tap a player name to select them as winner
       </div>
     </div>
-
-    <!-- Score Modal -->
-    {#if modalOpen && selectedMatch}
-      <div class="modal-overlay" on:click={closeModal}>
-        <div class="modal-content" on:click|stopPropagation>
-          <h3 class="modal-title">Enter Score</h3>
-
-          <div class="score-entry">
-            <div class="score-player player1">
-              <span class="score-player-name">{selectedMatch.player1}</span>
-              <div class="score-controls">
-                <button class="score-btn minus" on:click={() => modalScore1 = Math.max(0, modalScore1 - 1)}>−</button>
-                <span class="score-value">{modalScore1}</span>
-                <button class="score-btn plus" on:click={() => modalScore1++}>+</button>
-              </div>
-            </div>
-
-            <div class="score-vs">VS</div>
-
-            <div class="score-player player2">
-              <span class="score-player-name">{selectedMatch.player2}</span>
-              <div class="score-controls">
-                <button class="score-btn minus" on:click={() => modalScore2 = Math.max(0, modalScore2 - 1)}>−</button>
-                <span class="score-value">{modalScore2}</span>
-                <button class="score-btn plus" on:click={() => modalScore2++}>+</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="modal-actions">
-            <button class="cancel-btn" on:click={closeModal}>Cancel</button>
-            <button class="submit-btn" on:click={submitScore} disabled={modalScore1 === modalScore2}>Save</button>
-          </div>
-        </div>
-      </div>
-    {/if}
   {/if}
 </div>
 
@@ -387,14 +366,13 @@
     display: flex;
     flex-direction: column;
     height: calc(100vh - 180px);
-    padding: 0.5rem;
     overflow: hidden;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   }
 
   .game-fullscreen.is-fullscreen {
     height: 100vh;
-    padding: 1rem;
-    background: #0f172a;
+    padding: 0.5rem;
   }
 
   /* Top Bar */
@@ -404,8 +382,7 @@
     align-items: center;
     padding: 0.75rem 1rem;
     background: rgba(0, 0, 0, 0.4);
-    border-radius: 0.75rem;
-    margin-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     flex-shrink: 0;
   }
 
@@ -416,7 +393,7 @@
   }
 
   .game-title {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: bold;
     color: #ff9933;
     margin: 0;
@@ -424,7 +401,7 @@
 
   .game-meta {
     color: rgba(255, 255, 255, 0.5);
-    font-size: 1rem;
+    font-size: 0.9rem;
   }
 
   .top-center {
@@ -444,8 +421,7 @@
   }
 
   .champ-trophy { font-size: 1.5rem; }
-  .champ-name { font-size: 1.5rem; font-weight: bold; color: #22c55e; }
-  .champ-label { font-size: 0.8rem; color: rgba(255, 255, 255, 0.6); }
+  .champ-name { font-size: 1.25rem; font-weight: bold; color: #22c55e; }
 
   .progress-info { text-align: center; }
   .progress-num { font-size: 1.25rem; font-weight: bold; color: white; }
@@ -499,50 +475,89 @@
     flex: 1;
     overflow: auto;
     padding: 1rem;
-  }
-
-  .bracket-scroll {
-    min-width: max-content;
-  }
-
-  .bracket-rounds {
     display: flex;
-    gap: 2rem;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bracket-container {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-height: 100%;
+    padding: 1rem 0;
   }
 
   .bracket-round {
-    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
   }
 
   .round-name {
     text-align: center;
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: bold;
     color: #ff6600;
     margin-bottom: 1rem;
+    padding: 0.5rem;
+    background: rgba(255, 102, 0, 0.1);
+    border-radius: 0.5rem;
   }
 
   .round-matches {
+    flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: space-around;
-    gap: 1rem;
-    min-height: 100%;
   }
 
-  .bracket-match {
-    background: rgba(30, 41, 59, 0.9);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.75rem;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 0.2s;
+  .match-wrapper {
     position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+    margin: calc(var(--match-spacing) * 10px - 10px) 0;
   }
 
-  .bracket-match:hover:not(.disabled) {
-    border-color: #ff6600;
-    transform: translateY(-2px);
+  .match-wrapper:first-child {
+    margin-top: 0;
+  }
+
+  .match-wrapper:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Connector lines */
+  .connector {
+    position: absolute;
+    width: 30px;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .connector-left {
+    left: -30px;
+  }
+
+  .connector-right {
+    right: -30px;
+  }
+
+  .connector-line {
+    fill: none;
+    stroke: rgba(255, 102, 0, 0.4);
+    stroke-width: 2;
+  }
+
+  /* Match card */
+  .bracket-match {
+    flex: 1;
+    background: rgba(30, 41, 59, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    transition: all 0.2s;
   }
 
   .bracket-match.completed {
@@ -551,33 +566,39 @@
 
   .bracket-match.playable {
     border-color: #ff6600;
-    animation: match-pulse 2s infinite;
+    box-shadow: 0 0 20px rgba(255, 102, 0, 0.3);
   }
 
-  @keyframes match-pulse {
-    0%, 100% { box-shadow: 0 0 10px rgba(255, 102, 0, 0.3); }
-    50% { box-shadow: 0 0 25px rgba(255, 102, 0, 0.6); }
-  }
-
-  .bracket-match.disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .bracket-match.bye {
+    opacity: 0.5;
+    border-style: dashed;
   }
 
   .match-slot {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 1rem;
+    text-align: left;
+    cursor: default;
+    transition: all 0.15s;
   }
 
-  .match-slot:last-child {
-    border-bottom: none;
+  .match-slot.clickable {
+    cursor: pointer;
+  }
+
+  .match-slot.clickable:hover {
+    background: rgba(255, 102, 0, 0.2);
   }
 
   .match-slot.winner {
-    background: rgba(34, 197, 94, 0.2);
+    background: rgba(34, 197, 94, 0.3);
   }
 
   .match-slot.winner .slot-name {
@@ -585,43 +606,42 @@
     font-weight: bold;
   }
 
-  .match-slot.bye {
-    opacity: 0.4;
+  .match-slot.bye-slot {
     font-style: italic;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .match-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .slot-name {
-    font-size: 1.1rem;
-    color: white;
+    font-weight: 500;
+    color: #ff9933;
   }
 
-  .slot-score {
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: white;
-  }
-
-  .match-slot.winner .slot-score {
+  .match-slot.winner .slot-name {
     color: #22c55e;
   }
 
-  .tap-hint {
-    position: absolute;
-    top: 50%;
-    right: 0.5rem;
-    transform: translateY(-50%);
+  .match-slot.bye-slot .slot-name {
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .tap-label {
     font-size: 0.7rem;
     font-weight: bold;
     color: #ff6600;
-    padding: 0.2rem 0.5rem;
+    padding: 0.15rem 0.4rem;
     background: rgba(255, 102, 0, 0.2);
     border-radius: 0.25rem;
-    animation: blink 1s infinite;
+    animation: pulse 1.5s infinite;
   }
 
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
   }
 
   /* Footer */
@@ -629,166 +649,29 @@
     text-align: center;
     padding: 0.75rem;
     color: rgba(255, 255, 255, 0.5);
-    font-size: 1rem;
+    font-size: 0.9rem;
+    background: rgba(0, 0, 0, 0.3);
     flex-shrink: 0;
   }
 
-  /* ========== MODAL ========== */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.9);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-  }
-
-  .modal-content {
-    background: linear-gradient(135deg, #1e293b, #0f172a);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 1rem;
-    padding: 2rem;
-    max-width: 500px;
-    width: 90%;
-  }
-
-  .modal-title {
-    text-align: center;
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: white;
-    margin-bottom: 1.5rem;
-  }
-
-  .score-entry {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .score-player {
-    flex: 1;
-    text-align: center;
-    padding: 1rem;
-    border-radius: 0.75rem;
-  }
-
-  .score-player.player1 {
-    background: linear-gradient(135deg, rgba(66, 165, 245, 0.3), rgba(33, 150, 243, 0.1));
-    border: 1px solid rgba(66, 165, 245, 0.5);
-  }
-
-  .score-player.player2 {
-    background: linear-gradient(135deg, rgba(239, 83, 80, 0.3), rgba(229, 57, 53, 0.1));
-    border: 1px solid rgba(239, 83, 80, 0.5);
-  }
-
-  .score-player-name {
-    display: block;
-    font-weight: 600;
-    font-size: 1.1rem;
-    margin-bottom: 1rem;
-    color: white;
-  }
-
-  .score-controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-  }
-
-  .score-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: none;
-    font-size: 1.5rem;
-    font-weight: bold;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .score-btn.minus {
-    background: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
-  }
-
-  .score-btn.plus {
-    background: rgba(34, 197, 94, 0.3);
-    color: #22c55e;
-  }
-
-  .score-btn:hover {
-    transform: scale(1.1);
-  }
-
-  .score-value {
-    font-size: 2.5rem;
-    font-weight: bold;
-    min-width: 60px;
-    color: white;
-  }
-
-  .score-vs {
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: rgba(255, 255, 255, 0.3);
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: 1rem;
-  }
-
-  .cancel-btn {
-    flex: 1;
-    padding: 0.75rem;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 0.5rem;
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-
-  .cancel-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .submit-btn {
-    flex: 1;
-    padding: 0.75rem;
-    background: linear-gradient(135deg, #ff6600, #ff9933);
-    border: none;
-    border-radius: 0.5rem;
-    color: white;
-    font-size: 1rem;
-    font-weight: bold;
-    cursor: pointer;
-  }
-
-  .submit-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  @media (max-width: 640px) {
-    .score-entry {
-      flex-direction: column;
+  /* Responsive */
+  @media (max-width: 768px) {
+    .bracket-round {
+      min-width: 160px;
     }
-    .score-vs {
-      margin: 0.5rem 0;
+
+    .match-slot {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
     }
+
     .top-bar {
       flex-wrap: wrap;
       gap: 0.5rem;
+    }
+
+    .game-title {
+      font-size: 1rem;
     }
   }
 </style>

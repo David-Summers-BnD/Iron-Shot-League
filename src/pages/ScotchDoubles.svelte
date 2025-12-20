@@ -15,12 +15,6 @@
   let player1Name = '';
   let player2Name = '';
 
-  // Modal state
-  let modalOpen = false;
-  let selectedMatch = null;
-  let modalScore1 = 0;
-  let modalScore2 = 0;
-
   // View state
   let view = 'setup';
 
@@ -73,28 +67,14 @@
     return team ? `${team.player1} & ${team.player2}` : '';
   }
 
-  function openScoreModal(match) {
-    if (match.player1 === 'BYE' || match.player2 === 'BYE') return;
+  function selectWinner(match, winnerSlot) {
     if (!match.player1 || !match.player2) return;
+    if (match.player1 === 'BYE' || match.player2 === 'BYE') return;
 
-    selectedMatch = match;
-    modalScore1 = match.score1 || 0;
-    modalScore2 = match.score2 || 0;
-    modalOpen = true;
-  }
+    const score1 = winnerSlot === 'player1' ? 1 : 0;
+    const score2 = winnerSlot === 'player2' ? 1 : 0;
 
-  function closeModal() {
-    modalOpen = false;
-    selectedMatch = null;
-    modalScore1 = 0;
-    modalScore2 = 0;
-  }
-
-  function submitScore() {
-    if (!selectedMatch) return;
-
-    const winner = modalScore1 > modalScore2 ? 'player1' : 'player2';
-    bracket = updateMatch(bracket, selectedMatch.id, modalScore1, modalScore2, winner);
+    bracket = updateMatch(bracket, match.id, score1, score2, winnerSlot);
 
     if (currentTournament) {
       const isComplete = isBracketComplete(bracket);
@@ -105,7 +85,6 @@
     }
 
     saveData();
-    closeModal();
   }
 
   async function saveData() {
@@ -132,10 +111,6 @@
     isFullscreen = !!document.fullscreenElement;
   }
 
-  function isMatchPlayable(match) {
-    return match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE' && !match.completed;
-  }
-
   onMount(() => {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
   });
@@ -147,6 +122,7 @@
   $: winner = bracket ? getBracketWinner(bracket) : null;
   $: completedMatches = bracket ? bracket.rounds.reduce((acc, round) => acc + round.matches.filter(m => m.completed).length, 0) : 0;
   $: totalMatches = bracket ? bracket.rounds.reduce((acc, round) => acc + round.matches.length, 0) : 0;
+  $: progressPercent = totalMatches > 0 ? (completedMatches / totalMatches) * 100 : 0;
 </script>
 
 <div class="page-container">
@@ -264,166 +240,145 @@
     </div>
   {:else}
     <!-- Tournament In Progress -->
-    <div class="game-fullscreen" bind:this={gameContainer}>
+    <div class="game-fullscreen" class:is-fullscreen={isFullscreen} bind:this={gameContainer}>
       <!-- Top Bar -->
       <div class="top-bar">
-        <div class="top-bar-left">
-          <h2 class="tournament-name">{currentTournament?.name || 'Scotch Doubles'}</h2>
+        <div class="top-left">
+          <h1 class="game-title">{currentTournament?.name || 'Scotch Doubles'}</h1>
           <span class="teams-badge">{teams.length} Teams</span>
         </div>
 
-        <div class="top-bar-center">
-          <div class="progress-display">
-            <span class="progress-label">Progress:</span>
-            <span class="progress-value">{completedMatches} / {totalMatches}</span>
-          </div>
-        </div>
-
-        <div class="top-bar-right">
-          <button class="fullscreen-btn" on:click={toggleFullscreen}>
-            {isFullscreen ? '⛶' : '⛶'}
-          </button>
-          <button class="exit-btn" on:click={resetTournament}>
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <!-- Progress Bar -->
-      <div class="progress-bar-container">
-        <div class="progress-bar" style="width: {(completedMatches / totalMatches) * 100}%"></div>
-      </div>
-
-      <!-- Main Content -->
-      <div class="main-content">
-        <!-- Winner Banner -->
-        {#if winner}
-          <div class="winner-banner">
-            <span class="winner-icon">🏆</span>
-            <div class="winner-info">
-              <h3 class="winner-title">Champions!</h3>
-              <p class="winner-name">{winner}</p>
-              <p class="winner-players">{getTeamPlayers(winner)}</p>
+        <div class="top-center">
+          {#if winner}
+            <div class="champion-bar">
+              <span class="champ-trophy">🏆</span>
+              <span class="champ-name">{winner}</span>
             </div>
-          </div>
-        {/if}
-
-        <!-- Bracket Display -->
-        <div class="bracket-scroll">
-          <div class="bracket-rounds">
-            {#each bracket.rounds as round, roundIndex}
-              <div class="bracket-round">
-                <h3 class="round-name">{round.name}</h3>
-                <div class="round-matches" style="padding-top: {roundIndex * 40}px;">
-                  {#each round.matches as match}
-                    <button
-                      class="match-card {match.completed ? 'completed' : ''} {isMatchPlayable(match) ? 'playable' : ''}"
-                      on:click={() => openScoreModal(match)}
-                      disabled={!match.player1 || !match.player2 || match.player1 === 'BYE' || match.player2 === 'BYE'}
-                    >
-                      <!-- Team 1 -->
-                      <div class="team-matchup">
-                        <div class="team-row {match.winner === 'player1' ? 'winner' : ''}">
-                          <div class="team-details">
-                            <span class="team-matchup-name">{match.player1 || 'TBD'}</span>
-                            {#if match.player1 && match.player1 !== 'TBD' && match.player1 !== 'BYE'}
-                              <span class="team-matchup-players">{getTeamPlayers(match.player1)}</span>
-                            {/if}
-                          </div>
-                          {#if match.completed}
-                            <span class="team-score">{match.score1}</span>
-                          {/if}
-                        </div>
-
-                        <div class="match-divider"></div>
-
-                        <!-- Team 2 -->
-                        <div class="team-row {match.winner === 'player2' ? 'winner' : ''} {match.player2 === 'BYE' ? 'bye' : ''}">
-                          <div class="team-details">
-                            <span class="team-matchup-name">{match.player2 || 'TBD'}</span>
-                            {#if match.player2 && match.player2 !== 'TBD' && match.player2 !== 'BYE'}
-                              <span class="team-matchup-players">{getTeamPlayers(match.player2)}</span>
-                            {/if}
-                          </div>
-                          {#if match.completed}
-                            <span class="team-score">{match.score2}</span>
-                          {/if}
-                        </div>
-                      </div>
-
-                      {#if isMatchPlayable(match)}
-                        <span class="tap-hint">TAP</span>
-                      {:else if match.completed}
-                        <span class="edit-hint">TAP TO EDIT</span>
-                      {/if}
-                    </button>
-                  {/each}
-                </div>
+          {:else}
+            <div class="progress-info">
+              <span class="progress-num">{completedMatches}/{totalMatches}</span>
+              <div class="progress-mini">
+                <div class="progress-fill-mini" style="width: {progressPercent}%"></div>
               </div>
-            {/each}
-          </div>
+            </div>
+          {/if}
+        </div>
+
+        <div class="top-right">
+          <button class="fullscreen-btn" on:click={toggleFullscreen}>
+            {#if isFullscreen}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+              </svg>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            {/if}
+          </button>
+          <button class="end-btn" on:click={resetTournament}>Exit</button>
         </div>
       </div>
 
-      <!-- Footer Hint -->
-      <div class="footer-hint">
-        Tap matches to enter scores • Tap completed matches to edit
+      <!-- Bracket Display -->
+      <div class="bracket-area">
+        <div class="bracket-container">
+          {#each bracket.rounds as round, roundIndex}
+            <div class="bracket-round">
+              <h3 class="round-name">{round.name}</h3>
+              <div class="round-matches">
+                {#each round.matches as match}
+                  {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE'}
+                  {@const isBye = match.player1 === 'BYE' || match.player2 === 'BYE'}
+                  <div class="match-wrapper" style="--match-spacing: {Math.pow(2, roundIndex)};">
+                    <!-- Connector lines -->
+                    {#if roundIndex > 0}
+                      <svg class="connector connector-left" viewBox="0 0 30 100" preserveAspectRatio="none">
+                        <path d="M30 50 L15 50 L15 0" class="connector-line" />
+                        <path d="M30 50 L15 50 L15 100" class="connector-line" />
+                      </svg>
+                    {/if}
+                    {#if roundIndex < bracket.rounds.length - 1}
+                      <svg class="connector connector-right" viewBox="0 0 30 100" preserveAspectRatio="none">
+                        <path d="M0 50 L30 50" class="connector-line" />
+                      </svg>
+                    {/if}
+
+                    <div
+                      class="bracket-match"
+                      class:completed={match.completed}
+                      class:playable={isPlayable && !match.completed}
+                      class:bye={isBye}
+                    >
+                      <button
+                        class="match-slot"
+                        class:winner={match.winner === 'player1'}
+                        class:bye-slot={match.player1 === 'BYE'}
+                        class:clickable={isPlayable}
+                        on:click={() => isPlayable && selectWinner(match, 'player1')}
+                        disabled={!isPlayable}
+                      >
+                        <div class="team-slot-info">
+                          <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
+                          {#if match.player1 && match.player1 !== 'TBD' && match.player1 !== 'BYE'}
+                            <span class="slot-players">{getTeamPlayers(match.player1)}</span>
+                          {/if}
+                        </div>
+                        {#if isPlayable && !match.completed}
+                          <span class="tap-label">TAP</span>
+                        {/if}
+                      </button>
+                      <div class="match-divider"></div>
+                      <button
+                        class="match-slot"
+                        class:winner={match.winner === 'player2'}
+                        class:bye-slot={match.player2 === 'BYE'}
+                        class:clickable={isPlayable}
+                        on:click={() => isPlayable && selectWinner(match, 'player2')}
+                        disabled={!isPlayable}
+                      >
+                        <div class="team-slot-info">
+                          <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
+                          {#if match.player2 && match.player2 !== 'TBD' && match.player2 !== 'BYE'}
+                            <span class="slot-players">{getTeamPlayers(match.player2)}</span>
+                          {/if}
+                        </div>
+                        {#if isPlayable && !match.completed}
+                          <span class="tap-label">TAP</span>
+                        {/if}
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
       </div>
+
+      <!-- Winner Banner (when tournament complete) -->
+      {#if winner}
+        <div class="winner-footer">
+          <span class="winner-icon">🏆</span>
+          <div class="winner-details">
+            <span class="winner-label">Champions:</span>
+            <span class="winner-name">{winner}</span>
+            <span class="winner-players">{getTeamPlayers(winner)}</span>
+          </div>
+        </div>
+      {:else}
+        <!-- Footer hint -->
+        <div class="footer-hint">
+          Tap a team name to select them as winner
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
 
-<!-- Score Modal -->
-{#if modalOpen && selectedMatch}
-  <div class="modal-overlay" on:click={closeModal}>
-    <div class="score-modal" on:click|stopPropagation>
-      <h3 class="modal-title">{selectedMatch.completed ? 'Edit Score' : 'Enter Score'}</h3>
-
-      <div class="modal-teams">
-        <div class="modal-team team1">
-          <p class="modal-team-name">{selectedMatch.player1}</p>
-          <p class="modal-team-players">{getTeamPlayers(selectedMatch.player1)}</p>
-          <div class="score-controls">
-            <button class="score-btn minus" on:click={() => modalScore1 = Math.max(0, modalScore1 - 1)}>−</button>
-            <span class="score-display">{modalScore1}</span>
-            <button class="score-btn plus" on:click={() => modalScore1++}>+</button>
-          </div>
-        </div>
-
-        <div class="modal-vs">VS</div>
-
-        <div class="modal-team team2">
-          <p class="modal-team-name">{selectedMatch.player2}</p>
-          <p class="modal-team-players">{getTeamPlayers(selectedMatch.player2)}</p>
-          <div class="score-controls">
-            <button class="score-btn minus" on:click={() => modalScore2 = Math.max(0, modalScore2 - 1)}>−</button>
-            <span class="score-display">{modalScore2}</span>
-            <button class="score-btn plus" on:click={() => modalScore2++}>+</button>
-          </div>
-        </div>
-      </div>
-
-      {#if raceTo > 0}
-        <p class="race-info">Race to {raceTo}</p>
-      {/if}
-
-      <div class="modal-actions">
-        <button class="cancel-btn" on:click={closeModal}>Cancel</button>
-        <button
-          class="submit-btn"
-          on:click={submitScore}
-          disabled={modalScore1 === modalScore2}
-        >
-          {selectedMatch.completed ? 'Update Score' : 'Submit Score'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
 <style>
   .page-container {
-    height: calc(100vh - 180px);
+    height: 100%;
     overflow: hidden;
   }
 
@@ -690,18 +645,18 @@
     cursor: not-allowed;
   }
 
-  /* Game Fullscreen */
+  /* ========== FULL SCREEN GAME ========== */
   .game-fullscreen {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    height: calc(100vh - 180px);
     overflow: hidden;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
   }
 
-  .game-fullscreen:fullscreen {
+  .game-fullscreen.is-fullscreen {
     height: 100vh;
-    width: 100vw;
+    padding: 0.5rem;
   }
 
   /* Top Bar */
@@ -710,21 +665,21 @@
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1rem;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.4);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     flex-shrink: 0;
   }
 
-  .top-bar-left {
+  .top-left {
     display: flex;
     align-items: center;
     gap: 1rem;
   }
 
-  .tournament-name {
+  .game-title {
     font-size: 1.25rem;
     font-weight: bold;
-    color: white;
+    color: #ff9933;
     margin: 0;
   }
 
@@ -737,241 +692,211 @@
     color: white;
   }
 
-  .top-bar-center {
+  .top-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
+
+  .champion-bar {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
+    padding: 0.5rem 1.5rem;
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(22, 163, 74, 0.2));
+    border: 2px solid #22c55e;
+    border-radius: 1rem;
   }
 
-  .progress-display {
+  .champ-trophy { font-size: 1.5rem; }
+  .champ-name { font-size: 1.25rem; font-weight: bold; color: #22c55e; }
+
+  .progress-info { text-align: center; }
+  .progress-num { font-size: 1.25rem; font-weight: bold; color: white; }
+  .progress-mini {
+    width: 120px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    margin-top: 0.25rem;
+  }
+  .progress-fill-mini {
+    height: 100%;
+    background: linear-gradient(90deg, #ff6600, #ff9933);
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+
+  .top-right {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-  }
-
-  .progress-label {
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.875rem;
-  }
-
-  .progress-value {
-    color: #ff9933;
-    font-weight: bold;
-    font-size: 1rem;
-  }
-
-  .top-bar-right {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
 
   .fullscreen-btn {
-    width: 40px;
-    height: 40px;
+    padding: 0.5rem;
+    background: rgba(255, 102, 0, 0.2);
+    border: 1px solid rgba(255, 102, 0, 0.5);
     border-radius: 0.5rem;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: white;
-    font-size: 1.25rem;
+    color: #ff9933;
     cursor: pointer;
-    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .fullscreen-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 102, 0, 0.4);
   }
 
-  .exit-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 0.5rem;
-    background: rgba(239, 68, 68, 0.2);
+  .end-btn {
+    padding: 0.5rem 1rem;
+    background: transparent;
     border: 1px solid rgba(239, 68, 68, 0.5);
+    border-radius: 0.5rem;
     color: #ef4444;
-    font-size: 1.25rem;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .exit-btn:hover {
-    background: rgba(239, 68, 68, 0.4);
-  }
-
-  /* Progress Bar */
-  .progress-bar-container {
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    flex-shrink: 0;
-  }
-
-  .progress-bar {
-    height: 100%;
-    background: linear-gradient(90deg, #ff6600, #ff9933);
-    transition: width 0.5s ease;
-  }
-
-  /* Main Content */
-  .main-content {
+  /* ========== BRACKET AREA ========== */
+  .bracket-area {
     flex: 1;
     overflow: auto;
     padding: 1rem;
-  }
-
-  /* Winner Banner */
-  .winner-banner {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 1.5rem;
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.1));
-    border: 2px solid #22c55e;
-    border-radius: 1rem;
-    margin-bottom: 1.5rem;
+    justify-content: center;
   }
 
-  .winner-icon {
-    font-size: 3rem;
-  }
-
-  .winner-info {
-    flex: 1;
-  }
-
-  .winner-title {
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: #22c55e;
-    margin: 0 0 0.25rem 0;
-  }
-
-  .winner-name {
-    font-size: 1.75rem;
-    font-weight: bold;
-    color: white;
-    margin: 0;
-  }
-
-  .winner-players {
-    color: rgba(255, 255, 255, 0.6);
-    margin: 0.25rem 0 0 0;
-  }
-
-  /* Bracket */
-  .bracket-scroll {
-    overflow-x: auto;
-    padding-bottom: 1rem;
-  }
-
-  .bracket-rounds {
+  .bracket-container {
     display: flex;
-    gap: 2rem;
-    min-width: max-content;
+    align-items: stretch;
+    gap: 0;
+    min-height: 100%;
+    padding: 1rem 0;
   }
 
   .bracket-round {
     display: flex;
     flex-direction: column;
+    min-width: 220px;
   }
 
   .round-name {
     text-align: center;
+    font-size: 1rem;
     font-weight: bold;
-    font-size: 1.1rem;
-    color: #ff9933;
+    color: #ff6600;
     margin-bottom: 1rem;
+    padding: 0.5rem;
+    background: rgba(255, 102, 0, 0.1);
+    border-radius: 0.5rem;
   }
 
   .round-matches {
+    flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: space-around;
+  }
+
+  .match-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+    margin: calc(var(--match-spacing) * 12px - 12px) 0;
+  }
+
+  .match-wrapper:first-child {
+    margin-top: 0;
+  }
+
+  .match-wrapper:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Connector lines */
+  .connector {
+    position: absolute;
+    width: 30px;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .connector-left {
+    left: -30px;
+  }
+
+  .connector-right {
+    right: -30px;
+  }
+
+  .connector-line {
+    fill: none;
+    stroke: rgba(255, 102, 0, 0.4);
+    stroke-width: 2;
+  }
+
+  /* Match card */
+  .bracket-match {
     flex: 1;
-    gap: 1rem;
-  }
-
-  .match-card {
-    width: 280px;
-    background: rgba(15, 23, 42, 0.8);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.75rem;
-    padding: 1rem;
-    cursor: pointer;
+    background: rgba(30, 41, 59, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    overflow: hidden;
     transition: all 0.2s;
-    text-align: left;
   }
 
-  .match-card:hover:not(:disabled) {
-    border-color: #ff6600;
-    transform: translateY(-2px);
-  }
-
-  .match-card:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .match-card.playable {
-    border-color: rgba(255, 102, 0, 0.5);
-    animation: pulse-border 2s infinite;
-  }
-
-  .match-card.completed {
+  .bracket-match.completed {
     border-color: #22c55e;
   }
 
-  @keyframes pulse-border {
-    0%, 100% { border-color: rgba(255, 102, 0, 0.3); }
-    50% { border-color: rgba(255, 102, 0, 0.8); }
+  .bracket-match.playable {
+    border-color: #ff6600;
+    box-shadow: 0 0 20px rgba(255, 102, 0, 0.3);
   }
 
-  .team-matchup {
-    display: flex;
-    flex-direction: column;
+  .bracket-match.bye {
+    opacity: 0.5;
+    border-style: dashed;
   }
 
-  .team-row {
+  .match-slot {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.5rem 0;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 1rem;
+    text-align: left;
+    cursor: default;
+    transition: all 0.15s;
   }
 
-  .team-row.winner .team-matchup-name {
+  .match-slot.clickable {
+    cursor: pointer;
+  }
+
+  .match-slot.clickable:hover {
+    background: rgba(255, 102, 0, 0.2);
+  }
+
+  .match-slot.winner {
+    background: rgba(34, 197, 94, 0.3);
+  }
+
+  .match-slot.winner .slot-name {
     color: #22c55e;
+    font-weight: bold;
   }
 
-  .team-row.bye .team-matchup-name {
-    color: rgba(255, 255, 255, 0.4);
+  .match-slot.bye-slot {
     font-style: italic;
-  }
-
-  .team-details {
-    flex: 1;
-  }
-
-  .team-matchup-name {
-    font-weight: bold;
-    color: #ff9933;
-    display: block;
-    font-size: 1.1rem;
-  }
-
-  .team-matchup-players {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.5);
-    display: block;
-    margin-top: 0.125rem;
-  }
-
-  .team-score {
-    font-size: 1.75rem;
-    font-weight: bold;
-    color: rgba(255, 255, 255, 0.5);
-  }
-
-  .team-row.winner .team-score {
-    color: #22c55e;
+    color: rgba(255, 255, 255, 0.4);
   }
 
   .match-divider {
@@ -979,238 +904,118 @@
     background: rgba(255, 255, 255, 0.1);
   }
 
-  .tap-hint {
+  .team-slot-info {
+    flex: 1;
+  }
+
+  .slot-name {
+    font-weight: 500;
+    color: #ff9933;
     display: block;
-    text-align: center;
-    font-size: 0.875rem;
+  }
+
+  .match-slot.winner .slot-name {
+    color: #22c55e;
+  }
+
+  .match-slot.bye-slot .slot-name {
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .slot-players {
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+    margin-top: 0.125rem;
+  }
+
+  .tap-label {
+    font-size: 0.65rem;
     font-weight: bold;
     color: #ff6600;
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    animation: pulse-text 1.5s infinite;
+    padding: 0.1rem 0.35rem;
+    background: rgba(255, 102, 0, 0.2);
+    border-radius: 0.2rem;
+    animation: pulse 1.5s infinite;
   }
 
-  .edit-hint {
-    display: block;
-    text-align: center;
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.4);
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  @keyframes pulse-text {
+  @keyframes pulse {
     0%, 100% { opacity: 0.6; }
     50% { opacity: 1; }
   }
 
-  /* Footer Hint */
-  .footer-hint {
-    text-align: center;
-    padding: 0.75rem;
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 0.875rem;
-    background: rgba(0, 0, 0, 0.2);
+  /* Winner Footer */
+  .winner-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(22, 163, 74, 0.2));
+    border-top: 2px solid #22c55e;
     flex-shrink: 0;
   }
 
-  /* Modal */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.85);
+  .winner-icon {
+    font-size: 2rem;
+  }
+
+  .winner-details {
     display: flex;
     align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1rem;
-  }
-
-  .score-modal {
-    background: linear-gradient(135deg, #1e293b, #0f172a);
-    border: 2px solid rgba(255, 102, 0, 0.3);
-    border-radius: 1rem;
-    padding: 2rem;
-    width: 100%;
-    max-width: 550px;
-  }
-
-  .modal-title {
-    text-align: center;
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: white;
-    margin-bottom: 1.5rem;
-  }
-
-  .modal-teams {
-    display: flex;
-    align-items: stretch;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .modal-team {
-    flex: 1;
-    text-align: center;
-    padding: 1.25rem;
-    border-radius: 0.75rem;
-  }
-
-  .modal-team.team1 {
-    background: linear-gradient(135deg, rgba(66, 165, 245, 0.3), rgba(33, 150, 243, 0.1));
-    border: 1px solid rgba(66, 165, 245, 0.5);
-  }
-
-  .modal-team.team2 {
-    background: linear-gradient(135deg, rgba(239, 83, 80, 0.3), rgba(229, 57, 53, 0.1));
-    border: 1px solid rgba(239, 83, 80, 0.5);
-  }
-
-  .modal-team-name {
-    font-weight: bold;
-    font-size: 1.1rem;
-    color: white;
-    margin: 0 0 0.25rem 0;
-  }
-
-  .modal-team-players {
-    font-size: 0.875rem;
-    color: rgba(255, 255, 255, 0.5);
-    margin: 0 0 1rem 0;
-  }
-
-  .modal-vs {
-    display: flex;
-    align-items: center;
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: rgba(255, 255, 255, 0.3);
-  }
-
-  .score-controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     gap: 0.75rem;
   }
 
-  .score-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: none;
-    font-size: 1.5rem;
+  .winner-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9rem;
+  }
+
+  .winner-name {
+    font-size: 1.25rem;
     font-weight: bold;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .score-btn.minus {
-    background: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
-  }
-
-  .score-btn.plus {
-    background: rgba(34, 197, 94, 0.3);
     color: #22c55e;
   }
 
-  .score-btn:hover {
-    transform: scale(1.1);
+  .winner-players {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
   }
 
-  .score-display {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: white;
-    min-width: 60px;
-  }
-
-  .race-info {
+  /* Footer */
+  .footer-hint {
     text-align: center;
-    color: #ff9933;
-    font-weight: 600;
-    margin-bottom: 1rem;
-  }
-
-  .modal-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-
-  .cancel-btn {
-    flex: 1;
-    padding: 0.875rem;
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 0.5rem;
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .cancel-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .submit-btn {
-    flex: 1;
-    padding: 0.875rem;
-    background: linear-gradient(135deg, #ff6600, #ff9933);
-    border: none;
-    border-radius: 0.5rem;
-    color: white;
-    font-size: 1rem;
-    font-weight: bold;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .submit-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 20px rgba(255, 102, 0, 0.3);
-  }
-
-  .submit-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    padding: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    background: rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
   }
 
   /* Responsive */
   @media (max-width: 768px) {
+    .bracket-round {
+      min-width: 180px;
+    }
+
+    .match-slot {
+      padding: 0.6rem 0.75rem;
+      font-size: 0.9rem;
+    }
+
     .top-bar {
       flex-wrap: wrap;
       gap: 0.5rem;
     }
 
-    .top-bar-left {
-      width: 100%;
-      justify-content: space-between;
+    .game-title {
+      font-size: 1rem;
     }
 
-    .top-bar-center {
-      display: none;
-    }
-
-    .modal-teams {
+    .winner-details {
       flex-direction: column;
-    }
-
-    .modal-vs {
-      justify-content: center;
-      padding: 0.5rem 0;
-    }
-
-    .match-card {
-      width: 260px;
+      gap: 0.25rem;
+      align-items: flex-start;
     }
   }
 </style>
