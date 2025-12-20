@@ -1,4 +1,25 @@
 /**
+ * Generate proper bracket seed order (prevents BYEs from facing each other)
+ * For size 8: returns [1,8,4,5,2,7,3,6] - standard bracket seeding
+ */
+function generateBracketSeedOrder(bracketSize) {
+  function generate(round) {
+    if (round === 1) return [1, 2];
+    const prev = generate(round - 1);
+    const result = [];
+    const numSeeds = Math.pow(2, round);
+    for (let i = 0; i < prev.length; i++) {
+      result.push(prev[i]);
+      result.push(numSeeds + 1 - prev[i]);
+    }
+    return result;
+  }
+
+  const numRounds = Math.log2(bracketSize);
+  return generate(numRounds);
+}
+
+/**
  * Generate single elimination bracket
  */
 export function generateSingleElimination(players, seeded = false) {
@@ -10,9 +31,6 @@ export function generateSingleElimination(players, seeded = false) {
     bracketSize *= 2;
   }
 
-  // Calculate byes needed
-  const byesNeeded = bracketSize - n;
-
   // Seed players or use provided order
   let seededPlayers = [...players];
   if (!seeded) {
@@ -20,10 +38,18 @@ export function generateSingleElimination(players, seeded = false) {
     seededPlayers = shuffleArray(seededPlayers);
   }
 
-  // Add byes (null entries)
-  const bracket = [...seededPlayers];
-  for (let i = 0; i < byesNeeded; i++) {
-    bracket.push(null);
+  // Get proper bracket seed order (ensures BYEs go to top seeds, never BYE vs BYE)
+  const seedOrder = generateBracketSeedOrder(bracketSize);
+
+  // Create bracket array with proper seeding
+  // seedOrder contains seed numbers (1-based), map to players or BYE
+  const bracket = [];
+  for (const seedNum of seedOrder) {
+    if (seedNum <= seededPlayers.length) {
+      bracket.push(seededPlayers[seedNum - 1]); // seedNum is 1-based
+    } else {
+      bracket.push(null); // BYE
+    }
   }
 
   // Generate rounds

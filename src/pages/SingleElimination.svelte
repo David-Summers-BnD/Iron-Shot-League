@@ -40,6 +40,16 @@
     players = e.detail;
   }
 
+  function shufflePlayers() {
+    // Fisher-Yates shuffle
+    const shuffled = [...players];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    players = shuffled;
+  }
+
   function startTournament() {
     if (players.length < 2) return;
 
@@ -129,6 +139,18 @@
           </label>
         </div>
 
+        <div class="shuffle-row">
+          <button
+            type="button"
+            class="shuffle-btn"
+            on:click={shufflePlayers}
+            disabled={players.length < 2}
+          >
+            🔀 Shuffle Players
+          </button>
+          <span class="shuffle-hint">Randomize player order before generating bracket</span>
+        </div>
+
         <PlayerInput
           {players}
           minPlayers={2}
@@ -191,30 +213,17 @@
       <div class="bracket-area">
         <div class="bracket-container">
           {#each bracket.rounds as round, roundIndex}
-            <div class="bracket-round" style="--round-index: {roundIndex}; --total-rounds: {bracket.rounds.length};">
+            <div class="bracket-round">
               <h3 class="round-name">{round.name}</h3>
               <div class="round-matches">
                 {#each round.matches as match, matchIndex}
-                  {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE'}
+                  {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE' && !match.completed}
                   {@const isBye = match.player1 === 'BYE' || match.player2 === 'BYE'}
-                  <div class="match-wrapper" style="--match-spacing: {Math.pow(2, roundIndex)};">
-                    <!-- Connector lines -->
-                    {#if roundIndex > 0}
-                      <svg class="connector connector-left" viewBox="0 0 30 100" preserveAspectRatio="none">
-                        <path d="M30 50 L15 50 L15 0" class="connector-line" />
-                        <path d="M30 50 L15 50 L15 100" class="connector-line" />
-                      </svg>
-                    {/if}
-                    {#if roundIndex < bracket.rounds.length - 1}
-                      <svg class="connector connector-right" viewBox="0 0 30 100" preserveAspectRatio="none">
-                        <path d="M0 50 L30 50" class="connector-line" />
-                      </svg>
-                    {/if}
-
+                  <div class="match-wrapper">
                     <div
                       class="bracket-match"
                       class:completed={match.completed}
-                      class:playable={isPlayable && !match.completed}
+                      class:playable={isPlayable}
                       class:bye={isBye}
                     >
                       <button
@@ -226,7 +235,7 @@
                         disabled={!isPlayable}
                       >
                         <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
-                        {#if isPlayable && !match.completed}
+                        {#if isPlayable}
                           <span class="tap-label">TAP</span>
                         {/if}
                       </button>
@@ -240,11 +249,15 @@
                         disabled={!isPlayable}
                       >
                         <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
-                        {#if isPlayable && !match.completed}
+                        {#if isPlayable}
                           <span class="tap-label">TAP</span>
                         {/if}
                       </button>
                     </div>
+                    <!-- Connector line to next round -->
+                    {#if roundIndex < bracket.rounds.length - 1}
+                      <div class="connector-horiz"></div>
+                    {/if}
                   </div>
                 {/each}
               </div>
@@ -341,6 +354,40 @@
     width: 1.25rem;
     height: 1.25rem;
     accent-color: #ff6600;
+  }
+
+  .shuffle-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .shuffle-btn {
+    padding: 0.5rem 1rem;
+    background: rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    border-radius: 0.5rem;
+    color: #60a5fa;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .shuffle-btn:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: #60a5fa;
+  }
+
+  .shuffle-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .shuffle-hint {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .start-btn {
@@ -475,15 +522,11 @@
     flex: 1;
     overflow: auto;
     padding: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
   .bracket-container {
     display: flex;
     align-items: stretch;
-    gap: 0;
     min-height: 100%;
     padding: 1rem 0;
   }
@@ -491,18 +534,18 @@
   .bracket-round {
     display: flex;
     flex-direction: column;
-    min-width: 200px;
   }
 
   .round-name {
     text-align: center;
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: bold;
     color: #ff6600;
-    margin-bottom: 1rem;
-    padding: 0.5rem;
-    background: rgba(255, 102, 0, 0.1);
-    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: rgba(255, 102, 0, 0.15);
+    border-radius: 0.4rem;
+    flex-shrink: 0;
   }
 
   .round-matches {
@@ -510,54 +553,34 @@
     display: flex;
     flex-direction: column;
     justify-content: space-around;
+    padding: 0.5rem 0;
   }
 
   .match-wrapper {
     position: relative;
+    flex: 1;
     display: flex;
     align-items: center;
-    padding: 0.5rem 0;
-    margin: calc(var(--match-spacing) * 10px - 10px) 0;
+    min-height: 70px;
   }
 
-  .match-wrapper:first-child {
-    margin-top: 0;
-  }
-
-  .match-wrapper:last-child {
-    margin-bottom: 0;
-  }
-
-  /* Connector lines */
-  .connector {
-    position: absolute;
-    width: 30px;
-    height: 100%;
-    pointer-events: none;
-  }
-
-  .connector-left {
-    left: -30px;
-  }
-
-  .connector-right {
-    right: -30px;
-  }
-
-  .connector-line {
-    fill: none;
-    stroke: rgba(255, 102, 0, 0.4);
-    stroke-width: 2;
+  /* Connector line */
+  .connector-horiz {
+    width: 20px;
+    height: 2px;
+    background: rgba(255, 102, 0, 0.5);
+    flex-shrink: 0;
   }
 
   /* Match card */
   .bracket-match {
-    flex: 1;
+    width: 160px;
     background: rgba(30, 41, 59, 0.95);
     border: 2px solid rgba(255, 255, 255, 0.15);
     border-radius: 0.5rem;
     overflow: hidden;
     transition: all 0.2s;
+    flex-shrink: 0;
   }
 
   .bracket-match.completed {
