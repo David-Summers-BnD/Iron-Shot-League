@@ -201,75 +201,52 @@
         </div>
       </div>
 
-      <!-- Bracket Display -->
+      <!-- Bracket Display - Flexbox Layout (like brisbane8ball) -->
       <div class="bracket-area">
-        <div class="bracket-scroll" style="min-height: {bracket.rounds[0].matches.length * 50}px;">
-          {#each bracket.rounds as round, roundIndex}
-            {@const roundMult = Math.pow(2, roundIndex)}
-            {@const isLastRound = roundIndex === bracket.rounds.length - 1}
-            {@const totalSlots = bracket.rounds[0].matches.length * 2}
-            <div class="round-column">
+        <div class="bracket-container">
+          {#each bracket.rounds as round, ri}
+            {@const isLastRound = ri === bracket.rounds.length - 1}
+            <div class="bracket-round" class:finals={isLastRound}>
               <div class="round-header">{round.name}</div>
               <div class="round-matches">
-                {#each round.matches as match, matchIndex}
+                {#each round.matches as match}
                   {@const isPlayable = match.player1 && match.player2 && match.player1 !== 'BYE' && match.player2 !== 'BYE' && !match.completed}
                   {@const isBye = match.player1 === 'BYE' || match.player2 === 'BYE'}
-                  {@const posPercent = ((matchIndex * 2 + 1) * roundMult / totalSlots) * 100}
                   <div
-                    class="match-cell"
-                    style="top: {posPercent}%;"
+                    class="bracket-match"
+                    class:completed={match.completed}
+                    class:playable={isPlayable}
+                    class:bye={isBye}
                   >
-                    <div
-                      class="bracket-match"
-                      class:completed={match.completed}
-                      class:playable={isPlayable}
-                      class:bye={isBye}
+                    <button
+                      class="match-slot"
+                      class:winner={match.winner === 'player1'}
+                      class:bye-slot={match.player1 === 'BYE'}
+                      class:clickable={isPlayable}
+                      on:click={() => isPlayable && selectWinner(match, 'player1')}
+                      disabled={!isPlayable}
                     >
-                      <button
-                        class="match-slot"
-                        class:winner={match.winner === 'player1'}
-                        class:bye-slot={match.player1 === 'BYE'}
-                        class:clickable={isPlayable}
-                        on:click={() => isPlayable && selectWinner(match, 'player1')}
-                        disabled={!isPlayable}
-                      >
-                        <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
-                        {#if isPlayable}
-                          <span class="tap-label">TAP</span>
-                        {/if}
-                      </button>
-                      <div class="match-divider"></div>
-                      <button
-                        class="match-slot"
-                        class:winner={match.winner === 'player2'}
-                        class:bye-slot={match.player2 === 'BYE'}
-                        class:clickable={isPlayable}
-                        on:click={() => isPlayable && selectWinner(match, 'player2')}
-                        disabled={!isPlayable}
-                      >
-                        <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
-                        {#if isPlayable}
-                          <span class="tap-label">TAP</span>
-                        {/if}
-                      </button>
-                    </div>
-                    <!-- Connector lines -->
-                    {#if !isLastRound}
-                      <div class="connector-h"></div>
-                    {/if}
+                      <span class="slot-name">{match.player1 === 'BYE' ? 'BYE' : (match.player1 || 'TBD')}</span>
+                      {#if isPlayable}
+                        <span class="tap-label">TAP</span>
+                      {/if}
+                    </button>
+                    <div class="match-divider"></div>
+                    <button
+                      class="match-slot"
+                      class:winner={match.winner === 'player2'}
+                      class:bye-slot={match.player2 === 'BYE'}
+                      class:clickable={isPlayable}
+                      on:click={() => isPlayable && selectWinner(match, 'player2')}
+                      disabled={!isPlayable}
+                    >
+                      <span class="slot-name">{match.player2 === 'BYE' ? 'BYE' : (match.player2 || 'TBD')}</span>
+                      {#if isPlayable}
+                        <span class="tap-label">TAP</span>
+                      {/if}
+                    </button>
                   </div>
                 {/each}
-                <!-- Vertical connectors -->
-                {#if !isLastRound}
-                  {#each Array(round.matches.length / 2) as _, pairIdx}
-                    {@const topPos = ((pairIdx * 4 + 1) * roundMult / totalSlots) * 100}
-                    {@const bottomPos = ((pairIdx * 4 + 3) * roundMult / totalSlots) * 100}
-                    <div
-                      class="connector-v"
-                      style="top: {topPos}%; height: {bottomPos - topPos}%;"
-                    ></div>
-                  {/each}
-                {/if}
               </div>
             </div>
           {/each}
@@ -531,19 +508,21 @@
   .bracket-area {
     flex: 1;
     overflow: auto;
-    padding: 0.5rem;
+    padding: 1rem;
   }
 
-  .bracket-scroll {
+  .bracket-container {
     display: flex;
-    position: relative;
+    gap: 40px;
+    min-width: fit-content;
+    padding: 10px;
   }
 
-  .round-column {
+  .bracket-round {
     display: flex;
     flex-direction: column;
     min-width: 150px;
-    flex: 1;
+    position: relative;
   }
 
   .round-header {
@@ -551,43 +530,52 @@
     font-size: 0.75rem;
     font-weight: bold;
     color: #ff6600;
-    padding: 0.3rem 0.5rem;
+    padding: 0.4rem 0.5rem;
     background: rgba(255, 102, 0, 0.15);
     border-radius: 0.3rem;
-    margin: 0 1rem 0.5rem 0.5rem;
-    flex-shrink: 0;
+    margin-bottom: 0.5rem;
   }
 
   .round-matches {
     flex: 1;
-    position: relative;
-  }
-
-  .match-cell {
-    position: absolute;
-    left: 0.5rem;
-    right: 1rem;
-    transform: translateY(-50%);
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    justify-content: space-around;
   }
 
-  /* Connector lines */
-  .connector-h {
+  /* Vertical connector line on the round (not finals) */
+  .bracket-round:not(.finals)::after {
+    content: '';
     position: absolute;
-    right: -1rem;
+    right: -20px;
+    top: 15%;
+    bottom: 15%;
+    width: 2px;
+    background: #ff6600;
+  }
+
+  /* Horizontal connector line from each match */
+  .bracket-round:not(.finals) .bracket-match::after {
+    content: '';
+    position: absolute;
+    right: -20px;
     top: 50%;
-    width: 1rem;
+    width: 20px;
     height: 2px;
     background: #ff6600;
     transform: translateY(-50%);
   }
 
-  .connector-v {
+  /* Horizontal connector line going INTO matches (from previous round) */
+  .bracket-round:not(:first-child) .bracket-match::before {
+    content: '';
     position: absolute;
-    right: 0;
-    width: 2px;
+    left: -20px;
+    top: 50%;
+    width: 20px;
+    height: 2px;
     background: #ff6600;
+    transform: translateY(-50%);
   }
 
   /* Match card */
@@ -697,7 +685,11 @@
 
   /* Responsive */
   @media (max-width: 768px) {
-    .round-column {
+    .bracket-container {
+      gap: 30px;
+    }
+
+    .bracket-round {
       min-width: 120px;
     }
 
@@ -726,7 +718,11 @@
   }
 
   @media (max-width: 480px) {
-    .round-column {
+    .bracket-container {
+      gap: 25px;
+    }
+
+    .bracket-round {
       min-width: 100px;
     }
 

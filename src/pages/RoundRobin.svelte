@@ -7,6 +7,7 @@
   let players = [];
   let tournamentName = '';
   let numTables = 1;
+  let framesPerMatch = 1;
   let currentTournament = null;
   let matches = [];
   let activeMatchIds = [];
@@ -52,12 +53,19 @@
           id: id++,
           player1: playerList[i],
           player2: playerList[j],
+          player1Frames: 0,
+          player2Frames: 0,
           winner: null,
           completed: false
         });
       }
     }
     return matchList;
+  }
+
+  // Calculate frames needed to win (majority)
+  function framesToWin() {
+    return Math.ceil(framesPerMatch / 2);
   }
 
   function startTournament() {
@@ -72,11 +80,12 @@
       activeMatchIds.push(matches[i].id);
     }
 
-    currentTournament = createTournament('round-robin', name, players, { numTables });
+    currentTournament = createTournament('round-robin', name, players, { numTables, framesPerMatch });
     updateTournament(currentTournament.id, {
       status: 'in_progress',
       matches,
-      activeMatchIds
+      activeMatchIds,
+      framesPerMatch
     });
 
     view = 'game';
@@ -90,33 +99,74 @@
     );
   }
 
+  // Get frame score for display (from row player's perspective)
+  function getFrameScore(rowPlayer, colPlayer) {
+    const match = getMatch(rowPlayer, colPlayer);
+    if (!match) return { row: 0, col: 0 };
+
+    if (match.player1 === rowPlayer) {
+      return { row: match.player1Frames, col: match.player2Frames };
+    } else {
+      return { row: match.player2Frames, col: match.player1Frames };
+    }
+  }
+
   function handleCellClick(rowPlayer, colPlayer) {
     if (rowPlayer === colPlayer) return;
 
     const match = getMatch(rowPlayer, colPlayer);
     if (!match) return;
 
-    // Allow correction of completed matches OR scoring active matches
+    // Allow scoring active matches OR correcting completed matches
     const isActive = activeMatchIds.includes(match.id);
     const isCompleted = match.completed;
 
     // If it's not active and not completed, can't do anything
     if (!isActive && !isCompleted) return;
 
-    // If already completed and clicking the same winner, do nothing
-    if (isCompleted && match.winner === rowPlayer) return;
+    const neededToWin = framesToWin();
+    const isPlayer1 = match.player1 === rowPlayer;
 
-    // Update the match - row player wins
+    // Update the match - add a frame for the row player
     const newMatches = matches.map(m => {
       if (m.id === match.id) {
-        return { ...m, winner: rowPlayer, completed: true };
+        let p1Frames = m.player1Frames;
+        let p2Frames = m.player2Frames;
+
+        if (isCompleted) {
+          // Correcting a completed match - reset and give frame to clicked player
+          p1Frames = isPlayer1 ? 1 : 0;
+          p2Frames = isPlayer1 ? 0 : 1;
+        } else {
+          // Active match - add a frame
+          if (isPlayer1) {
+            p1Frames++;
+          } else {
+            p2Frames++;
+          }
+        }
+
+        // Check if match is now complete
+        const matchWon = p1Frames >= neededToWin || p2Frames >= neededToWin;
+        const winner = matchWon ? (p1Frames >= neededToWin ? m.player1 : m.player2) : null;
+
+        return {
+          ...m,
+          player1Frames: p1Frames,
+          player2Frames: p2Frames,
+          winner,
+          completed: matchWon
+        };
       }
       return m;
     });
 
-    // Only advance to next match if this was an active (not yet completed) match
+    // Find the updated match
+    const updatedMatch = newMatches.find(m => m.id === match.id);
+
+    // Only advance to next match if this match just became completed
     let newActiveIds = activeMatchIds;
-    if (isActive && !isCompleted) {
+    if (isActive && !isCompleted && updatedMatch.completed) {
       // Remove this match from active
       newActiveIds = activeMatchIds.filter(id => id !== match.id);
 
@@ -167,6 +217,7 @@
     players = [];
     tournamentName = '';
     numTables = 1;
+    framesPerMatch = 1;
     currentTournament = null;
     matches = [];
     activeMatchIds = [];
@@ -239,6 +290,26 @@
             </select>
             <p class="form-hint">{numTables} match{numTables > 1 ? 'es' : ''} play simultaneously</p>
           </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Frames Per Match</label>
+            <select bind:value={framesPerMatch} class="form-input">
+              <option value={1}>1 frame (single game)</option>
+              <option value={3}>Best of 3 (first to 2)</option>
+              <option value={5}>Best of 5 (first to 3)</option>
+              <option value={7}>Best of 7 (first to 4)</option>
+            </select>
+            <p class="form-hint">
+              {#if framesPerMatch === 1}
+                Single frame per match - tap once to score winner
+              {:else}
+                First to {Math.ceil(framesPerMatch / 2)} frames wins - tap to add frames
+              {/if}
+            </p>
+          </div>
+          <div class="form-group"></div>
         </div>
 
         <PlayerInput
@@ -344,6 +415,7 @@
                   {#each players as colPlayer}
                     {@const state = cellStates[rowPlayer]?.[colPlayer] || 'none'}
                     {@const isClickable = state === 'active' || state === 'win' || state === 'loss'}
+                    {@const score = getFrameScore(rowPlayer, colPlayer)}
                     <td
                       class="cell {state}"
                       class:clickable={isClickable}
@@ -352,11 +424,27 @@
                       {#if state === 'self'}
                         <span class="cell-mark">—</span>
                       {:else if state === 'win'}
-                        <span class="cell-mark win">W</span>
+                        <div class="cell-content">
+                          <span class="cell-mark win">W</span>
+                          {#if framesPerMatch > 1}
+                            <span class="frame-score">{score.row}-{score.col}</span>
+                          {/if}
+                        </div>
                       {:else if state === 'loss'}
-                        <span class="cell-mark loss">L</span>
+                        <div class="cell-content">
+                          <span class="cell-mark loss">L</span>
+                          {#if framesPerMatch > 1}
+                            <span class="frame-score">{score.row}-{score.col}</span>
+                          {/if}
+                        </div>
                       {:else if state === 'active'}
-                        <span class="cell-mark active">TAP</span>
+                        <div class="cell-content">
+                          {#if framesPerMatch > 1 && (score.row > 0 || score.col > 0)}
+                            <span class="frame-score active-score">{score.row}-{score.col}</span>
+                          {:else}
+                            <span class="cell-mark active">TAP</span>
+                          {/if}
+                        </div>
                       {:else}
                         <span class="cell-mark pending">·</span>
                       {/if}
@@ -373,7 +461,11 @@
 
       <!-- Footer hint -->
       <div class="footer-hint">
-        Tap highlighted cell to mark <strong>ROW player</strong> as winner • Tap any completed cell to correct mistakes
+        {#if framesPerMatch > 1}
+          Tap cell to add frame for <strong>ROW player</strong> (first to {Math.ceil(framesPerMatch / 2)} wins) • Tap completed match to reset
+        {:else}
+          Tap highlighted cell to mark <strong>ROW player</strong> as winner • Tap any completed cell to correct
+        {/if}
       </div>
     </div>
   {/if}
@@ -873,6 +965,28 @@
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
+  }
+
+  /* Cell content for frame scores */
+  .cell-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+  }
+
+  .frame-score {
+    font-size: 0.75em;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .frame-score.active-score {
+    font-size: 1.2em;
+    color: white;
+    text-shadow: 0 0 10px rgba(255, 102, 0, 0.8);
+    animation: blink 1s infinite;
   }
 
   /* Stats columns */

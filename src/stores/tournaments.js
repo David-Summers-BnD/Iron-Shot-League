@@ -18,6 +18,7 @@ export const tournamentTypes = [
   { id: 'ladder', name: 'Ladder', icon: '📊', description: 'Challenge your way up' },
   { id: 'swiss', name: 'Swiss System', icon: '🎲', description: 'Play similar skill levels' },
   { id: 'scotch-doubles', name: 'Scotch Doubles', icon: '👥', description: 'Team alternating shots' },
+  { id: 'killer', name: 'Killer', icon: '💀', description: 'Last player standing wins' },
   { id: 'history', name: 'History', icon: '📜', description: 'Past tournaments' }
 ];
 

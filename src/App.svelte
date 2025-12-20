@@ -8,6 +8,7 @@
   import Ladder from './pages/Ladder.svelte';
   import Swiss from './pages/Swiss.svelte';
   import ScotchDoubles from './pages/ScotchDoubles.svelte';
+  import Killer from './pages/Killer.svelte';
   import History from './pages/History.svelte';
   import { currentTab, tournaments } from './stores/tournaments.js';
   import { loadTournaments } from './lib/storage.js';
@@ -41,6 +42,8 @@
         <Swiss />
       {:else if $currentTab === 'scotch-doubles'}
         <ScotchDoubles />
+      {:else if $currentTab === 'killer'}
+        <Killer />
       {:else if $currentTab === 'history'}
         <History />
       {:else}
