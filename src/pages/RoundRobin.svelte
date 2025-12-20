@@ -87,17 +87,20 @@
     );
   }
 
-  function selectWinner(rowPlayer, colPlayer) {
+  function handleCellClick(rowPlayer, colPlayer) {
+    // Re-evaluate conditions at click time
+    if (rowPlayer === colPlayer) return;
+
     const match = getMatchForCell(rowPlayer, colPlayer);
-    if (!match || match.completed) return;
+    if (!match) return;
+    if (match.completed) return;
     if (!currentMatchIndices.includes(match.id)) return;
 
     // The row player wins
-    match.winner = rowPlayer;
-    match.completed = true;
+    const updatedMatch = { ...match, winner: rowPlayer, completed: true };
 
     // Update matches array
-    matches = matches.map(m => m.id === match.id ? match : m);
+    matches = matches.map(m => m.id === match.id ? updatedMatch : m);
 
     // Move to next matches
     advanceMatches();
@@ -302,11 +305,12 @@
                     {#each players as colPlayer, colIdx}
                       {@const result = getMatchResult(rowPlayer, colPlayer)}
                       {@const isActive = isMatchActive(rowPlayer, colPlayer)}
-                      {@const match = getMatchForCell(rowPlayer, colPlayer)}
                       <td
                         class="matrix-cell {result} {isActive ? 'active' : ''}"
                         class:clickable={isActive && result === 'pending'}
-                        on:click={() => result === 'pending' && isActive && selectWinner(rowPlayer, colPlayer)}
+                        on:click={() => handleCellClick(rowPlayer, colPlayer)}
+                        role="button"
+                        tabindex={isActive && result === 'pending' ? 0 : -1}
                       >
                         {#if result === 'self'}
                           <span class="cell-self">—</span>
