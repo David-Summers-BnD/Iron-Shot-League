@@ -1,4 +1,5 @@
 <script>
+  import { onMount, onDestroy } from 'svelte';
   import PlayerInput from '../components/PlayerInput.svelte';
   import { tournaments, createTournament, updateTournament } from '../stores/tournaments.js';
   import { saveTournaments } from '../lib/storage.js';
@@ -12,6 +13,31 @@
 
   // View state
   let view = 'setup';
+  let isFullscreen = false;
+  let gameContainer;
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      gameContainer?.requestFullscreen();
+      isFullscreen = true;
+    } else {
+      document.exitFullscreen();
+      isFullscreen = false;
+    }
+  }
+
+  // Listen for fullscreen changes (e.g., user presses Escape)
+  function handleFullscreenChange() {
+    isFullscreen = !!document.fullscreenElement;
+  }
+
+  onMount(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+  });
+
+  onDestroy(() => {
+    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  });
 
   function handlePlayersChange(e) {
     players = e.detail;
@@ -69,8 +95,16 @@
 
     const match = getMatch(rowPlayer, colPlayer);
     if (!match) return;
-    if (match.completed) return;
-    if (!activeMatchIds.includes(match.id)) return;
+
+    // Allow correction of completed matches OR scoring active matches
+    const isActive = activeMatchIds.includes(match.id);
+    const isCompleted = match.completed;
+
+    // If it's not active and not completed, can't do anything
+    if (!isActive && !isCompleted) return;
+
+    // If already completed and clicking the same winner, do nothing
+    if (isCompleted && match.winner === rowPlayer) return;
 
     // Update the match - row player wins
     const newMatches = matches.map(m => {
@@ -80,15 +114,19 @@
       return m;
     });
 
-    // Remove this match from active
-    let newActiveIds = activeMatchIds.filter(id => id !== match.id);
+    // Only advance to next match if this was an active (not yet completed) match
+    let newActiveIds = activeMatchIds;
+    if (isActive && !isCompleted) {
+      // Remove this match from active
+      newActiveIds = activeMatchIds.filter(id => id !== match.id);
 
-    // Find next incomplete matches to fill tables
-    const incompleteMatches = newMatches.filter(m => !m.completed && !newActiveIds.includes(m.id));
-    while (newActiveIds.length < numTables && incompleteMatches.length > 0) {
-      const nextMatch = incompleteMatches.shift();
-      if (nextMatch) {
-        newActiveIds = [...newActiveIds, nextMatch.id];
+      // Find next incomplete matches to fill tables
+      const incompleteMatches = newMatches.filter(m => !m.completed && !newActiveIds.includes(m.id));
+      while (newActiveIds.length < numTables && incompleteMatches.length > 0) {
+        const nextMatch = incompleteMatches.shift();
+        if (nextMatch) {
+          newActiveIds = [...newActiveIds, nextMatch.id];
+        }
       }
     }
 
@@ -227,7 +265,7 @@
     </div>
   {:else}
     <!-- FULL SCREEN Game Display -->
-    <div class="game-fullscreen">
+    <div class="game-fullscreen" class:is-fullscreen={isFullscreen} bind:this={gameContainer}>
       <!-- Top Bar -->
       <div class="top-bar">
         <div class="top-left">
@@ -264,6 +302,17 @@
               <div class="progress-fill-mini" style="width: {progressPercent}%"></div>
             </div>
           </div>
+          <button class="fullscreen-btn" on:click={toggleFullscreen} title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}>
+            {#if isFullscreen}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+              </svg>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+              </svg>
+            {/if}
+          </button>
           <button class="end-btn" on:click={resetTournament}>Exit</button>
         </div>
       </div>
@@ -294,8 +343,10 @@
                   </td>
                   {#each players as colPlayer}
                     {@const state = cellStates[rowPlayer]?.[colPlayer] || 'none'}
+                    {@const isClickable = state === 'active' || state === 'win' || state === 'loss'}
                     <td
                       class="cell {state}"
+                      class:clickable={isClickable}
                       on:click={() => handleCellClick(rowPlayer, colPlayer)}
                     >
                       {#if state === 'self'}
@@ -322,7 +373,7 @@
 
       <!-- Footer hint -->
       <div class="footer-hint">
-        Tap the highlighted cell to mark the <strong>ROW player</strong> as winner
+        Tap highlighted cell to mark <strong>ROW player</strong> as winner • Tap any completed cell to correct mistakes
       </div>
     </div>
   {/if}
@@ -330,7 +381,8 @@
 
 <style>
   .page-container {
-    min-height: 100vh;
+    height: 100%;
+    overflow: hidden;
   }
 
   /* Setup Screen */
@@ -434,8 +486,15 @@
   .game-fullscreen {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 120px);
+    height: calc(100vh - 180px);
     padding: 0.5rem;
+    overflow: hidden;
+  }
+
+  .game-fullscreen.is-fullscreen {
+    height: 100vh;
+    padding: 1rem;
+    background: #0f172a;
   }
 
   /* Top Bar */
@@ -568,6 +627,24 @@
     background: linear-gradient(90deg, #ff6600, #ff9933);
     border-radius: 3px;
     transition: width 0.3s;
+  }
+
+  .fullscreen-btn {
+    padding: 0.5rem;
+    background: rgba(255, 102, 0, 0.2);
+    border: 1px solid rgba(255, 102, 0, 0.5);
+    border-radius: 0.5rem;
+    color: #ff9933;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .fullscreen-btn:hover {
+    background: rgba(255, 102, 0, 0.4);
+    transform: scale(1.05);
   }
 
   .end-btn {
@@ -741,6 +818,17 @@
 
   .cell.loss {
     background: rgba(239, 68, 68, 0.3);
+  }
+
+  /* Completed cells can be clicked to correct */
+  .cell.clickable {
+    cursor: pointer;
+  }
+
+  .cell.win.clickable:hover,
+  .cell.loss.clickable:hover {
+    outline: 2px dashed rgba(255, 255, 255, 0.5);
+    outline-offset: -2px;
   }
 
   .cell.active {
