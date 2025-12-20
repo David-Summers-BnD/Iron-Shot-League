@@ -68,17 +68,45 @@
     return Math.ceil(framesPerMatch / 2);
   }
 
+  // Get set of players currently in active matches
+  function getActivePlayers(matchList, activeIds) {
+    const activePlayers = new Set();
+    for (const id of activeIds) {
+      const match = matchList.find(m => m.id === id);
+      if (match) {
+        activePlayers.add(match.player1);
+        activePlayers.add(match.player2);
+      }
+    }
+    return activePlayers;
+  }
+
+  // Find next available matches where neither player is already playing
+  function findAvailableMatches(matchList, currentActiveIds, maxMatches) {
+    const newActiveIds = [...currentActiveIds];
+    const incompleteMatches = matchList.filter(m => !m.completed && !newActiveIds.includes(m.id));
+
+    for (const match of incompleteMatches) {
+      if (newActiveIds.length >= maxMatches) break;
+
+      // Check if either player is already in an active match
+      const activePlayers = getActivePlayers(matchList, newActiveIds);
+      if (!activePlayers.has(match.player1) && !activePlayers.has(match.player2)) {
+        newActiveIds.push(match.id);
+      }
+    }
+
+    return newActiveIds;
+  }
+
   function startTournament() {
     if (players.length < 3) return;
 
     const name = tournamentName.trim() || `Round Robin - ${new Date().toLocaleDateString()}`;
     matches = generateMatches(players);
 
-    // Set initial active matches based on table count
-    activeMatchIds = [];
-    for (let i = 0; i < Math.min(numTables, matches.length); i++) {
-      activeMatchIds.push(matches[i].id);
-    }
+    // Set initial active matches - ensure no player is in multiple matches
+    activeMatchIds = findAvailableMatches(matches, [], numTables);
 
     currentTournament = createTournament('round-robin', name, players, { numTables, framesPerMatch });
     updateTournament(currentTournament.id, {
@@ -170,14 +198,8 @@
       // Remove this match from active
       newActiveIds = activeMatchIds.filter(id => id !== match.id);
 
-      // Find next incomplete matches to fill tables
-      const incompleteMatches = newMatches.filter(m => !m.completed && !newActiveIds.includes(m.id));
-      while (newActiveIds.length < numTables && incompleteMatches.length > 0) {
-        const nextMatch = incompleteMatches.shift();
-        if (nextMatch) {
-          newActiveIds = [...newActiveIds, nextMatch.id];
-        }
-      }
+      // Find next available matches - ensuring no player is double-booked
+      newActiveIds = findAvailableMatches(newMatches, newActiveIds, numTables);
     }
 
     // Update state - force full reassignment for reactivity
