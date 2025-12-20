@@ -60,7 +60,7 @@
     <div class="container mx-auto px-4">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <img src="/logo.png" alt="Iron Shot League" class="h-10 w-auto" />
+          <img src="./logo.png" alt="Iron Shot League" class="h-10 w-auto" />
           <p class="text-xs text-base-content/50">Hosted by Rusty</p>
         </div>
 

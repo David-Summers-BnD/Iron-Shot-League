@@ -11,7 +11,7 @@
   <div class="container mx-auto px-4 py-4">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <img src="/logo.png" alt="Iron Shot League" class="h-14 w-auto" />
+        <img src="./logo.png" alt="Iron Shot League" class="h-14 w-auto" />
         <div>
           <p class="text-xs text-base-content/60 italic">Steel Your Nerves, Sink Your Shots</p>
         </div>
